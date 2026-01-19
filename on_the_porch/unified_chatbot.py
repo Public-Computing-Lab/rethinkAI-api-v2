@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 # Ensure we can import RAG utilities from the directory with a space in its name
 _THIS_FILE = Path(__file__).resolve()
 _REAL_DIR = _THIS_FILE.parent
-_ROOT_DIR = _REAL_DIR.parent.parent
+_ROOT_DIR = _REAL_DIR.parent
 load_dotenv(_ROOT_DIR / ".env")
 # RAG utilities live in `on_the_porch/rag stuff`
 _RAG_DIR = _REAL_DIR / "rag stuff"
@@ -70,6 +70,7 @@ def _safe_json_loads(text: str, default: Dict[str, Any]) -> Dict[str, Any]:
 # Retrieval Cache: stores the most recent retrieval results for follow-up use
 # ---------------------------------------------------------------------------
 
+
 def create_empty_cache() -> Dict[str, Any]:
     """Create an empty retrieval cache structure."""
     return {
@@ -110,16 +111,16 @@ def summarize_cache(cache: Optional[Dict[str, Any]]) -> str:
     """Create a concise text summary of what's in the cache for the LLM."""
     if not cache or not cache.get("mode"):
         return "(No cached data available)"
-    
+
     parts = []
     mode = cache.get("mode", "unknown")
     question = cache.get("question", "")
     timestamp = cache.get("timestamp", "")
-    
+
     parts.append(f"Cached data from mode '{mode}' for question: \"{question}\"")
     if timestamp:
         parts.append(f"Retrieved at: {timestamp}")
-    
+
     # Summarize SQL results
     sql_result = cache.get("sql_result")
     if sql_result:
@@ -128,7 +129,7 @@ def summarize_cache(cache: Optional[Dict[str, Any]]) -> str:
         row_count = len(rows) if isinstance(rows, list) else 0
         col_names = ", ".join(columns[:10]) if columns else "unknown columns"
         parts.append(f"SQL data: {row_count} rows with columns [{col_names}]")
-        
+
         # Include actual data preview (first few rows)
         if rows and row_count > 0:
             preview_rows = rows[:10]  # First 10 rows for preview
@@ -141,7 +142,7 @@ def summarize_cache(cache: Optional[Dict[str, Any]]) -> str:
                 else:
                     row_str = str(row)[:200]
                 parts.append(f"  Row {i}: {row_str}")
-    
+
     # Summarize RAG chunks
     rag_meta = cache.get("rag_metadata")
     rag_chunks = cache.get("rag_chunks")
@@ -150,14 +151,14 @@ def summarize_cache(cache: Optional[Dict[str, Any]]) -> str:
         sources = list(set(m.get("source", "unknown") for m in rag_meta[:10]))
         doc_types = list(set(m.get("doc_type", "unknown") for m in rag_meta[:10]))
         parts.append(f"RAG data: {chunk_count} chunks from sources: {sources[:5]}, types: {doc_types}")
-        
+
         # Include chunk previews
         if rag_chunks:
             parts.append(f"Chunk previews (first {min(5, len(rag_chunks))}):")
             for i, chunk in enumerate(rag_chunks[:5], 1):
                 preview = chunk[:300] + "..." if len(chunk) > 300 else chunk
                 parts.append(f"  Chunk {i}: {preview}")
-    
+
     return "\n".join(parts)
 
 
@@ -173,12 +174,12 @@ def _check_if_needs_new_data(
     # If no history and no cache, always need new data
     has_history = conversation_history and len(conversation_history) > 0
     has_cache = retrieval_cache and retrieval_cache.get("mode")
-    
+
     if not has_history and not has_cache:
         return {"needs_new_data": True, "reason": "No conversation history or cached data available"}
-    
+
     client = _get_llm_client()
-    
+
     # Build conversation context for analysis
     history_context = ""
     if conversation_history:
@@ -187,10 +188,10 @@ def _check_if_needs_new_data(
             content = msg.get("content", "")
             if role and content:
                 history_context += f"{role.upper()}: {content}\n\n"
-    
+
     # Build cache summary
     cache_summary = summarize_cache(retrieval_cache)
-    
+
     system_prompt = (
         "You analyze if a user's question can be answered from conversation history and/or cached retrieval data, or if it needs new data retrieval.\n\n"
         "You have access to:\n"
@@ -205,7 +206,7 @@ def _check_if_needs_new_data(
         "- If question asks to compare, explain, or provide more detail on cached data → needs_new_data = false\n\n"
         "Return ONLY valid JSON with keys: needs_new_data (boolean) and reason (brief string explaining your decision)."
     )
-    
+
     user_prompt = (
         "Conversation History:\n" + (history_context if history_context else "(No previous conversation)") + "\n\n"
         "Cached Data:\n" + cache_summary + "\n\n"
@@ -213,33 +214,30 @@ def _check_if_needs_new_data(
         "Analyze if this question can be answered from the conversation history and/or cached data above, or if it needs new data retrieval.\n"
         "Return JSON only."
     )
-    
+
     default_result = {"needs_new_data": True, "reason": "Error analyzing question, defaulting to new data"}
-    
+
     try:
         model = client.GenerativeModel(GEMINI_MODEL)
         prompt = f"{system_prompt}\n\n{user_prompt}"
-        resp = model.generate_content(
-            prompt,
-            generation_config={"temperature": 0}
-        )
+        resp = model.generate_content(prompt, generation_config={"temperature": 0})
         content = (resp.text or "").strip()
-        
+
         # Remove code fences if present
         if content.startswith("```"):
             content = content.strip("`").strip()
             lines = content.splitlines()
             if lines and lines[0].strip().lower() in ("json", "javascript", "js"):
                 content = "\n".join(lines[1:]).strip()
-        
+
         result = _safe_json_loads(content, default_result)
-        
+
         # Ensure needs_new_data is boolean
         needs_new = result.get("needs_new_data", True)
         if isinstance(needs_new, str):
             needs_new = needs_new.lower() in ("true", "yes", "1")
         result["needs_new_data"] = bool(needs_new)
-        
+
         return result
     except Exception:
         return default_result
@@ -351,10 +349,7 @@ def _route_question(question: str) -> Dict[str, Any]:
     try:
         model = client.GenerativeModel(GEMINI_MODEL)
         prompt = f"{system_prompt}\n\n{user_prompt}"
-        resp = model.generate_content(
-            prompt,
-            generation_config={"temperature": 0}
-        )
+        resp = model.generate_content(prompt, generation_config={"temperature": 0})
         content = (resp.text or "").strip()
         # Remove code fences if present
         if content.startswith("```"):
@@ -376,23 +371,23 @@ def _route_question(question: str) -> Dict[str, Any]:
     sources = plan.get("policy_sources")
     folders = plan.get("folder_categories")
     k = plan.get("k", 5)
-    
+
     # Normalize and validate k
     try:
         k = int(k)
     except (ValueError, TypeError):
         k = 5
-    
+
     # Ensure k is at least 3 (minimum for useful retrieval)
     if k < 3:
         k = 3
-    
+
     # Force higher k for calendar questions to ensure good event coverage
     if _is_calendar_question(question):
         # Ensure at least 5 results for calendar queries
         if k < 5:
             k = 5
-    
+
     # Cap k at reasonable maximum (20)
     if k > 20:
         k = 20
@@ -432,18 +427,13 @@ def _compose_rag_answer(question: str, chunks: List[str], metadatas: List[Dict[s
         "When you quote or paraphrase people or documents, briefly explain who or what they are first, "
         "then include the quote in a natural way. Avoid technical jargon, and do not mention SQL, databases, RAG, "
         "retrieval methods, or internal tools.\n"
-        "If the question involves numbers, be honest when the sources are limited and avoid inventing precise figures.\n"
-        + ("\n\nYou are in a conversation. Use previous messages for context when the current question references earlier topics or asks for follow-ups." if conversation_history else "")
+        "If the question involves numbers, be honest when the sources are limited and avoid inventing precise figures.\n" + ("\n\nYou are in a conversation. Use previous messages for context when the current question references earlier topics or asks for follow-ups." if conversation_history else "")
     )
-    user_prompt = (
-        "SOURCES:\n" + context + "\n\n" +
-        "QUESTION: " + question + "\n\n" +
-        "Please answer for the user in clear, everyday language:"
-    )
+    user_prompt = "SOURCES:\n" + context + "\n\n" + "QUESTION: " + question + "\n\n" + "Please answer for the user in clear, everyday language:"
 
     client = _get_llm_client()
     model = client.GenerativeModel(GEMINI_MODEL)
-    
+
     # Build conversation context
     full_prompt = system_prompt + "\n\n"
     if conversation_history:
@@ -452,12 +442,9 @@ def _compose_rag_answer(question: str, chunks: List[str], metadatas: List[Dict[s
             content = msg.get("content", "")
             full_prompt += f"{role.upper()}: {content}\n\n"
     full_prompt += user_prompt
-    
+
     try:
-        resp = model.generate_content(
-            full_prompt,
-            generation_config={"temperature": 0.3}
-        )
+        resp = model.generate_content(full_prompt, generation_config={"temperature": 0.3})
         return (resp.text or "").strip()
     except Exception:
         return "\n\n".join(context_parts[:10])  # fallback: show a sample of context
@@ -474,18 +461,18 @@ def _answer_from_history(
     """
     has_history = conversation_history and len(conversation_history) > 0
     has_cache = retrieval_cache and retrieval_cache.get("mode")
-    
+
     if not has_history and not has_cache:
         return "I don't have any previous conversation or data to reference. Could you ask your question again?"
-    
+
     client = _get_llm_client()
     model = client.GenerativeModel(GEMINI_MODEL)
-    
+
     # Build the context from cache
     cache_context = ""
     if has_cache:
         cache_context = _build_cache_context_for_answer(retrieval_cache)
-    
+
     system_prompt = (
         "You are a friendly, non-technical assistant helping people understand Dorchester community data and policies.\n"
         "This system is configured for DORCHESTER ONLY. All data queries are automatically filtered to Dorchester only.\n"
@@ -498,7 +485,7 @@ def _answer_from_history(
         "If you cannot answer from the available information, politely say so and suggest they ask a new question.\n"
         "Avoid technical jargon, and do not mention SQL, databases, RAG, retrieval methods, or internal tools."
     )
-    
+
     # Build conversation context
     history_text = ""
     if conversation_history:
@@ -507,7 +494,7 @@ def _answer_from_history(
             content = msg.get("content", "")
             if role and content:
                 history_text += f"{role.upper()}: {content}\n\n"
-    
+
     user_prompt = ""
     if history_text:
         user_prompt += "Conversation History:\n" + history_text + "\n\n"
@@ -515,13 +502,10 @@ def _answer_from_history(
         user_prompt += "Available Data (from recent retrieval):\n" + cache_context + "\n\n"
     user_prompt += "Current Question: " + question + "\n\n"
     user_prompt += "Please answer the current question using the available information:"
-    
+
     try:
         full_prompt = system_prompt + "\n\n" + user_prompt
-        resp = model.generate_content(
-            full_prompt,
-            generation_config={"temperature": 0.3}
-        )
+        resp = model.generate_content(full_prompt, generation_config={"temperature": 0.3})
         return (resp.text or "").strip()
     except Exception:
         return "I encountered an error answering from the available information. Could you rephrase your question?"
@@ -530,18 +514,18 @@ def _answer_from_history(
 def _build_cache_context_for_answer(cache: Dict[str, Any]) -> str:
     """Build a detailed context string from cache for answering questions."""
     parts = []
-    
+
     # Include SQL results
     sql_result = cache.get("sql_result")
     if sql_result:
         rows = sql_result.get("rows", [])
         columns = sql_result.get("columns", [])
-        
+
         if rows and columns:
             parts.append(f"Data table with {len(rows)} entries:")
             parts.append(f"Columns: {', '.join(columns)}")
             parts.append("")
-            
+
             # Include all rows (up to a reasonable limit) with numbering
             for i, row in enumerate(rows[:50], 1):
                 if isinstance(row, dict):
@@ -552,14 +536,14 @@ def _build_cache_context_for_answer(cache: Dict[str, Any]) -> str:
                     parts.append(f"Entry {i}: {', '.join(row_items)}")
                 else:
                     parts.append(f"Entry {i}: {row}")
-            
+
             if len(rows) > 50:
                 parts.append(f"... and {len(rows) - 50} more entries")
-    
+
     # Include RAG chunks
     rag_chunks = cache.get("rag_chunks", [])
     rag_meta = cache.get("rag_metadata", [])
-    
+
     if rag_chunks:
         parts.append("")
         parts.append(f"Document excerpts ({len(rag_chunks)} chunks):")
@@ -567,17 +551,39 @@ def _build_cache_context_for_answer(cache: Dict[str, Any]) -> str:
             source = meta.get("source", "Unknown source") if meta else "Unknown source"
             parts.append(f"\nExcerpt {i} (from {source}):")
             parts.append(chunk)
-    
+
     return "\n".join(parts)
 
 
 def _is_calendar_question(question: str) -> bool:
     """Check if the question is about events, calendar, or schedules."""
     calendar_keywords = [
-        "event", "events", "happening", "schedule", "calendar", "activity", "activities",
-        "this week", "next week", "today", "tomorrow", "weekend", "saturday", "sunday",
-        "monday", "tuesday", "wednesday", "thursday", "friday", "what's on", "what is on",
-        "going on", "things to do", "community event", "meeting", "workshop"
+        "event",
+        "events",
+        "happening",
+        "schedule",
+        "calendar",
+        "activity",
+        "activities",
+        "this week",
+        "next week",
+        "today",
+        "tomorrow",
+        "weekend",
+        "saturday",
+        "sunday",
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "what's on",
+        "what is on",
+        "going on",
+        "things to do",
+        "community event",
+        "meeting",
+        "workshop",
     ]
     question_lower = question.lower()
     return any(kw in question_lower for kw in calendar_keywords)
@@ -637,7 +643,7 @@ def _run_sql(question: str, conversation_history: Optional[List[Dict[str, str]]]
     data_visualization_keywords = ["show", "display", "visualize", "see", "find", "list"]
     question_lower = (question or "").lower()
     want_map = any(w in question_lower for w in location_keywords) or any(w in question_lower for w in data_visualization_keywords)
-    
+
     # Default to including location when possible
     if metadata:
         try:
@@ -701,8 +707,7 @@ def _run_hybrid(question: str, plan: Dict[str, Any], conversation_history: Optio
         "Focus on what the information means for people in Dorchester, not on technical details or data sources.\n"
         "If you see any data from other neighborhoods, ignore it completely and only discuss Dorchester.\n\n"
         "Do NOT mention SQL, databases, RAG, retrieval, or any internal tools. Just speak as a helpful information bot.\n"
-        "Never invent data or trends not present in the inputs."
-        + ("\n\nYou are in a conversation. Reference previous questions naturally when it helps the user." if conversation_history else "")
+        "Never invent data or trends not present in the inputs." + ("\n\nYou are in a conversation. Reference previous questions naturally when it helps the user." if conversation_history else "")
     )
     blob = {
         "sql_answer": sql_part.get("answer"),
@@ -710,11 +715,8 @@ def _run_hybrid(question: str, plan: Dict[str, Any], conversation_history: Optio
         "rag_answer": rag_part.get("answer"),
         "rag_sources": [m.get("source", "?") for m in rag_part.get("metadata", [])][:10],
     }
-    merge_user = (
-        "Question:\n" + question + "\n\n" +
-        "Inputs (JSON):\n" + json.dumps(blob, ensure_ascii=False, default=str)
-    )
-    
+    merge_user = "Question:\n" + question + "\n\n" + "Inputs (JSON):\n" + json.dumps(blob, ensure_ascii=False, default=str)
+
     # Build full prompt with conversation history
     full_prompt = merge_system + "\n\n"
     if conversation_history:
@@ -723,12 +725,9 @@ def _run_hybrid(question: str, plan: Dict[str, Any], conversation_history: Optio
             content = msg.get("content", "")
             full_prompt += f"{role.upper()}: {content}\n\n"
     full_prompt += merge_user
-    
+
     try:
-        resp = model.generate_content(
-            full_prompt,
-            generation_config={"temperature": 0}
-        )
+        resp = model.generate_content(full_prompt, generation_config={"temperature": 0})
         answer = (resp.text or "").strip()
     except Exception:
         answer = (sql_part.get("answer") or "") + "\n\n" + (rag_part.get("answer") or "")
@@ -760,7 +759,7 @@ def main() -> None:
 
         plan = _route_question(question)
         mode = plan.get("mode", "rag")
-        
+
         # Print the routing plan
         print(f"\n🧭 Routing Plan: {json.dumps(plan, indent=2)}\n")
 
@@ -791,5 +790,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-

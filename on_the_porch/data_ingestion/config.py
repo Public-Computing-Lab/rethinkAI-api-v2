@@ -2,13 +2,14 @@
 Configuration module for automated data ingestion.
 Loads all settings from environment variables (.env file).
 """
+
 import os
 from pathlib import Path
 from dotenv import load_dotenv
 
 # Load environment variables from the repo root .env
 _THIS_DIR = Path(__file__).parent
-_ROOT_DIR = _THIS_DIR.parents[2]
+_ROOT_DIR = _THIS_DIR.parents[1]
 _ENV_FILE = _ROOT_DIR / ".env"
 
 if _ENV_FILE.exists():
@@ -88,7 +89,7 @@ EMAIL_SYNC_STATE_FILE = _THIS_DIR / ".email_sync_state.json"
 # ============================================================================
 # Supported File Extensions for Vector DB
 # ============================================================================
-SUPPORTED_EXTENSIONS = {'.pdf', '.doc', '.docx', '.txt', '.md'}
+SUPPORTED_EXTENSIONS = {".pdf", ".doc", ".docx", ".txt", ".md"}
 
 
 # ============================================================================
@@ -100,25 +101,25 @@ def validate_config() -> list:
     Returns a list of error messages (empty if all valid).
     """
     errors = []
-    
+
     # Check Google Drive config
     if not GOOGLE_DRIVE_FOLDER_ID:
         errors.append("GOOGLE_DRIVE_FOLDER_ID is not set")
-    
+
     if not Path(GOOGLE_CREDENTIALS_PATH).exists():
         errors.append(f"Google credentials file not found: {GOOGLE_CREDENTIALS_PATH}")
-    
+
     # Check Email config (Gmail OAuth)
     if not EMAIL_ADDRESS:
         errors.append("NEWSLETTER_EMAIL_ADDRESS is not set")
-    
+
     if not Path(GMAIL_CREDENTIALS_PATH).exists():
         errors.append(f"Gmail OAuth credentials file not found: {GMAIL_CREDENTIALS_PATH}")
-    
+
     # Check Gemini config
     if not GEMINI_API_KEY:
         errors.append("GEMINI_API_KEY is not set")
-    
+
     return errors
 
 
@@ -140,7 +141,7 @@ def print_config_summary():
     print(f"Max Files Per Run: {MAX_FILES_PER_RUN}")
     print(f"Verbose Logging: {VERBOSE_LOGGING}")
     print("=" * 80)
-    
+
     # Check for errors
     errors = validate_config()
     if errors:
@@ -153,4 +154,3 @@ def print_config_summary():
 if __name__ == "__main__":
     # When run directly, print configuration summary
     print_config_summary()
-
