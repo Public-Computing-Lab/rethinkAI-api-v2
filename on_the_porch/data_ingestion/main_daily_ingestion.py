@@ -30,14 +30,6 @@ _RAG_STUFF_DIR = Path(__file__).parent.parent / "rag stuff"
 if str(_RAG_STUFF_DIR) not in sys.path:
     sys.path.insert(0, str(_RAG_STUFF_DIR))
 
-# Import using importlib to ensure we get the right module
-# import importlib.util
-#
-# _vectordb_spec = importlib.util.spec_from_file_location("rag_build_vectordb", _RAG_STUFF_DIR / "build_vectordb.py")
-# _vectordb_module = importlib.util.module_from_spec(_vectordb_spec)
-# _vectordb_spec.loader.exec_module(_vectordb_module)
-# build_vectordb = _vectordb_module.build_vectordb  # type: ignore
-
 # Placeholder directories where future ingestion steps will drop files
 INGESTION_POLICY_DIR = config.TEMP_DOWNLOAD_DIR / "policy_docs"
 INGESTION_TRANSCRIPT_DIR = config.TEMP_DOWNLOAD_DIR / "transcripts"
@@ -288,34 +280,6 @@ def main():
 
     # Separator
     print("\n" + "-" * 80 + "\n")
-
-    # After ingestion, update the unified vector DB from any files present
-    # in the placeholder directories. Future steps will copy the right files
-    # into these folders before this runs.
-    print("►" * 40)
-    print("► PHASE 4: Building/Updating Vector DB")
-    print("►" * 40)
-
-    try:
-        # Import build_vectordb HERE instead of at module level
-        _RAG_STUFF_DIR = Path(__file__).parent.parent / "rag stuff"
-        if str(_RAG_STUFF_DIR) not in sys.path:
-            sys.path.insert(0, str(_RAG_STUFF_DIR))
-
-        import importlib.util
-
-        _vectordb_spec = importlib.util.spec_from_file_location("rag_build_vectordb", _RAG_STUFF_DIR / "build_vectordb.py")
-        _vectordb_module = importlib.util.module_from_spec(_vectordb_spec)
-        _vectordb_spec.loader.exec_module(_vectordb_module)
-        build_vectordb = _vectordb_module.build_vectordb
-
-        build_vectordb(
-            policy_dir=INGESTION_POLICY_DIR,
-            transcript_dir=INGESTION_TRANSCRIPT_DIR,
-            newsletter_dir=INGESTION_NEWSLETTER_DIR,
-        )
-    except Exception as e:
-        print(f"\n⚠️  Vectordb build/update failed: {e}")
 
     # Log summary
     log_run_summary(drive_stats, email_stats, boston_stats, dotnews_stats)
