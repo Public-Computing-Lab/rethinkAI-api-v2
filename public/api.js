@@ -1,11 +1,16 @@
 // API Client for Dorchester Community Assistant
 // Handles all API communication with error handling and timeouts
 
-const ApiConfig = {
-  baseUrl: 'http://127.0.0.1:8888',
+const ApiConfig = window.AppConfig || {
+  baseUrl: 'https://boston.ourcommunity.is/api/v2',
   timeoutMs: 30000,
-  apiKey: 'banana', // Set your RETHINKAI_API_KEY here
+  apiKey: '', // Must be set via config.js
 };
+// Warn if using fallback config
+if (!window.AppConfig) {
+  console.warn('⚠️ AppConfig not loaded - using fallback configuration');
+  console.warn('Run "node build-config.js" to generate config.js from .env');
+}
 
 /**
  * Make an API request with timeout and error handling

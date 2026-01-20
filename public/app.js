@@ -1,9 +1,18 @@
 // Main Application Logic for Dorchester Community Assistant
 
 // Configuration
-const API_BASE_URL = 'http://127.0.0.1:8888';
-const API_KEY = 'banana'; // Set your RETHINKAI_API_KEY here
+// Load configuration from generated config.js
+const API_BASE_URL = (window.AppConfig && window.AppConfig.baseUrl) || 'https://boston.ourcommunity.is/api/v2';
+const API_KEY = (window.AppConfig && window.AppConfig.apiKey) || '';
 
+// Warn if config is not loaded properly
+if (!window.AppConfig) {
+  console.warn('⚠️ AppConfig not loaded - run "node build-config.js" to generate from .env');
+}
+
+if (!API_KEY) {
+  console.error('❌ API Key is not configured. Please set RETHINKAI_API_KEY in .env and run build-config.js');
+}
 // Application State
 const state = {
   conversationHistory: [],
