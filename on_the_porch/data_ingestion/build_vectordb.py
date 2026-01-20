@@ -23,7 +23,8 @@ TRANSCRIPT_DIR = Path("Data/AI meeting transcripts")
 NEWSLETTER_DIR = Path("Data/newsletters")
 
 # Shared vector DB used by the chatbot
-VECTORDB_DIR = Path("../vectordb_mixed")
+# VECTORDB_DIR = Path(_ROOT_DIR /  "vectordb_mixed")
+VECTORDB_DIR = os.getenv("VECTORDB_DIR")
 
 
 def _get_gemini_client():

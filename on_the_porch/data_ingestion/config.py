@@ -48,7 +48,7 @@ IMAP_PORT = int(os.getenv("IMAP_PORT", "993"))
 # File Paths Configuration
 # ============================================================================
 # Vector DB directory (main documents)
-_VECTORDB_DIR_RAW = os.getenv("VECTORDB_DIR", "../vectordb_new")
+_VECTORDB_DIR_RAW = os.getenv("VECTORDB_DIR", _ROOT_DIR / "vectordb_new")
 if Path(_VECTORDB_DIR_RAW).is_absolute():
     VECTORDB_DIR = Path(_VECTORDB_DIR_RAW)
 else:
@@ -57,7 +57,7 @@ else:
 # NOTE: Calendar events are now SQL-only (weekly_events table), no vector DB needed.
 
 # Temporary download directory
-_TEMP_DIR_RAW = os.getenv("TEMP_DOWNLOAD_DIR", "./temp_downloads")
+_TEMP_DIR_RAW = os.getenv("TEMP_DOWNLOAD_DIR", _ROOT_DIR / "on_the_porch/data_ingestion/temp_downloads")
 if Path(_TEMP_DIR_RAW).is_absolute():
     TEMP_DOWNLOAD_DIR = Path(_TEMP_DIR_RAW)
 else:
@@ -65,6 +65,31 @@ else:
 
 # Ensure temp directory exists
 TEMP_DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+
+# Clean up any corrupt PDF files (HTML error pages disguised as PDFs)
+def _clean_corrupt_pdfs(directory: Path) -> None:
+    """Remove files that claim to be PDFs but are actually HTML."""
+    if not directory.exists():
+        return
+    for file in directory.rglob("*.pdf"):
+        try:
+            # Check first few bytes
+            with open(file, "rb") as f:
+                header = f.read(10)
+                if header.startswith(b"<!DOC") or header.startswith(b"<html"):
+                    print(f"Removing corrupt PDF (HTML file): {file}")
+                    file.unlink()
+        except Exception:
+            pass
+
+
+# Clean temp directory
+_clean_corrupt_pdfs(TEMP_DOWNLOAD_DIR)
+
+# Clean vectordb directory if it exists
+if VECTORDB_DIR.exists():
+    _clean_corrupt_pdfs(VECTORDB_DIR)
 
 # ============================================================================
 # Gemini AI Configuration

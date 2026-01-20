@@ -21,13 +21,6 @@ source "$VENV_DIR/bin/activate"
 # Change to ingestion directory
 cd "$INGESTION_DIR"
 
-# Load environment variables from .env file
-if [ -f "$INGESTION_DIR/.env" ]; then
-    set -a
-    source "$INGESTION_DIR/.env"
-    set +a
-fi
-
 # Run the main daily ingestion script
 {
     echo "==========================================" 
