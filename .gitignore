@@ -75,6 +75,7 @@ public/config.js
 *.log
 gemini_api.key.txt
 cookies.txt
+*.jsonl
 
 # nova
 .nova
