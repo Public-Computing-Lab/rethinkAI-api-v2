@@ -14,7 +14,7 @@ from retrieval import GeminiEmbeddings
 
 _THIS_FILE = Path(__file__).resolve()
 _INGEST_DIR = _THIS_FILE.parent
-_ROOT_DIR = _INGEST_DIR.parents[2]
+_ROOT_DIR = _INGEST_DIR.parents[1]
 load_dotenv(_ROOT_DIR / ".env")
 
 # Input directories
@@ -23,7 +23,8 @@ TRANSCRIPT_DIR = Path("Data/AI meeting transcripts")
 NEWSLETTER_DIR = Path("Data/newsletters")
 
 # Shared vector DB used by the chatbot
-VECTORDB_DIR = Path("../vectordb_mixed")
+# VECTORDB_DIR = Path(_ROOT_DIR /  "vectordb_mixed")
+VECTORDB_DIR = os.getenv("VECTORDB_DIR")
 
 
 def _get_gemini_client():
@@ -39,62 +40,59 @@ def _get_gemini_client():
 def parse_transcript_chunks(file_path):
     """
     Parse AI meeting transcript file and extract chunks with tags.
-    
+
     Format:
     [1]
     quote text
     [Highlight]
-    
+
     [Comments]
     Person Name: tag1, tag2
     """
-    with open(file_path, 'r', encoding='utf-8') as f:
+    with open(file_path, "r", encoding="utf-8") as f:
         content = f.read()
-    
+
     # Split by chunk numbers [1], [2], etc.
-    chunk_pattern = r'\[(\d+)\](.*?)(?=\[\d+\]|$)'
+    chunk_pattern = r"\[(\d+)\](.*?)(?=\[\d+\]|$)"
     chunks = re.findall(chunk_pattern, content, re.DOTALL)
-    
+
     documents = []
-    
+
     for chunk_num, chunk_content in chunks:
         # Extract the quote text (before [Highlight])
-        quote_match = re.search(r'(.*?)\[Highlight\]', chunk_content, re.DOTALL)
+        quote_match = re.search(r"(.*?)\[Highlight\]", chunk_content, re.DOTALL)
         if not quote_match:
             continue
-        
+
         quote_text = quote_match.group(1).strip()
-        
+
         # Skip empty quotes
         if not quote_text:
             continue
-        
+
         # Extract tags from [Comments] section
-        tags_match = re.search(r'\[Comments\].*?:\s*(.+?)(?:\n|$)', chunk_content, re.DOTALL)
-        
+        tags_match = re.search(r"\[Comments\].*?:\s*(.+?)(?:\n|$)", chunk_content, re.DOTALL)
+
         tags = []
         if tags_match:
             tags_text = tags_match.group(1).strip()
-            tags = [tag.strip().lower() for tag in tags_text.split(',')]
-        
+            tags = [tag.strip().lower() for tag in tags_text.split(",")]
+
         # Create metadata
         metadata = {
-            'source': Path(file_path).name,
-            'doc_type': 'transcript',
-            'chunk_id': int(chunk_num),
+            "source": Path(file_path).name,
+            "doc_type": "transcript",
+            "chunk_id": int(chunk_num),
         }
-        
+
         # Only add tags if they exist (convert list to comma-separated string)
         if tags:
-            metadata['tags'] = ', '.join(tags)
-        
+            metadata["tags"] = ", ".join(tags)
+
         # Create document
-        doc = Document(
-            page_content=quote_text,
-            metadata=metadata
-        )
+        doc = Document(page_content=quote_text, metadata=metadata)
         documents.append(doc)
-    
+
     return documents
 
 
@@ -107,33 +105,27 @@ def load_policy_documents():
 
     text_files = list(POLICY_DIR.glob("*.txt"))
     print(f"Found {len(text_files)} policy files")
-    
+
     # Define headers to split on
-    headers_to_split_on = [
-        ("#", "Heading"),
-        ("##", "Sub Heading")
-    ]
-    
+    headers_to_split_on = [("#", "Heading"), ("##", "Sub Heading")]
+
     # Markdown splitter to split by headers and add as metadata
-    markdown_splitter = MarkdownHeaderTextSplitter(
-        headers_to_split_on=headers_to_split_on,
-        strip_headers=False
-    )
-    
+    markdown_splitter = MarkdownHeaderTextSplitter(headers_to_split_on=headers_to_split_on, strip_headers=False)
+
     for file_path in text_files:
         print(f"Processing policy: {file_path.name}...")
-        
-        with open(file_path, 'r', encoding='utf-8') as f:
+
+        with open(file_path, "r", encoding="utf-8") as f:
             content = f.read()
-        
+
         # Split by markdown headers
         md_header_splits = markdown_splitter.split_text(content)
-        
+
         for doc in md_header_splits:
-            doc.metadata['source'] = file_path.name
-            doc.metadata['doc_type'] = 'policy'
+            doc.metadata["source"] = file_path.name
+            doc.metadata["doc_type"] = "policy"
             documents.append(doc)
-    
+
     print(f"Created {len(documents)} policy chunks")
     return documents
 
@@ -147,12 +139,12 @@ def load_transcript_documents():
 
     transcript_files = list(TRANSCRIPT_DIR.glob("*.txt"))
     print(f"Found {len(transcript_files)} transcript files")
-    
+
     for file_path in transcript_files:
         print(f"Processing transcript: {file_path.name}...")
         chunks = parse_transcript_chunks(file_path)
         documents.extend(chunks)
-    
+
     print(f"Created {len(documents)} transcript chunks")
     return documents
 
@@ -362,4 +354,3 @@ def build_vectordb():
 
 if __name__ == "__main__":
     build_vectordb()
-

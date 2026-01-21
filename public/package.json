@@ -1,0 +1,13 @@
+{
+  "name": "on-the-porch-webapp",
+  "version": "0.1.0",
+  "description": "Dorchester Community Assistant",
+  "scripts": {
+	"build:config": "node build-config.js",
+	"prebuild": "npm run build:config",
+	"build": "echo 'Config built successfully'"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT"
+}
