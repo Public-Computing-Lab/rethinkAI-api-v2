@@ -19,6 +19,7 @@ temp_downloads/*
 # Log files
 *.log
 ingestion_log.jsonl
+*.jsonl
 
 # Google credentials
 *.json
