@@ -88,15 +88,13 @@ def _load_geocoding_data(datastore_path: Path) -> pd.DataFrame:
                 _geocoding_data = pd.read_csv(csv_path)
             else:
                 _geocoding_data = pd.DataFrame()
-        except Exception as e:
+        except Exception:
             _geocoding_data = pd.DataFrame()
 
     return _geocoding_data
 
 
-def get_location_from_llm(
-    message: str, api_base_url: str, api_key: str
-) -> Optional[Dict]:
+def get_location_from_llm(message: str, api_base_url: str, api_key: str) -> Optional[Dict]:
     """
     Calls Gemini API to extract location information from a message.
 
@@ -126,7 +124,7 @@ def get_location_from_llm(
                     return None
                 try:
                     llm_result = json.loads(llm_result)
-                except:
+                except Exception:
                     return None
 
             if isinstance(llm_result, dict):
@@ -134,9 +132,7 @@ def get_location_from_llm(
                     return llm_result
                 else:
 
-                    return {
-                        "locations": llm_result if isinstance(llm_result, list) else []
-                    }
+                    return {"locations": llm_result if isinstance(llm_result, list) else []}
 
             return None
         else:
@@ -182,9 +178,7 @@ def _get_all_location_names(geocoding_data: pd.DataFrame) -> list:
     for _, row in geocoding_data.iterrows():
         primary_name = str(row["Name"]).strip()
         if primary_name and primary_name != "nan":
-            all_locations.append(
-                {"name": primary_name, "lat": row["Latitude"], "lon": row["Longitude"]}
-            )
+            all_locations.append({"name": primary_name, "lat": row["Latitude"], "lon": row["Longitude"]})
 
         alt_names = str(row["Alternate Names"]).strip()
         if alt_names and alt_names != "nan":
@@ -204,9 +198,7 @@ def _get_all_location_names(geocoding_data: pd.DataFrame) -> list:
     return all_locations
 
 
-def match_llm_location_to_assets(
-    llm_location_name: str, datastore_path: Path
-) -> Optional[Dict]:
+def match_llm_location_to_assets(llm_location_name: str, datastore_path: Path) -> Optional[Dict]:
     """
     Matches a location name from the LLM to geocoding community assets based on exact or partial matches.
 
@@ -258,9 +250,7 @@ def match_llm_location_to_assets(
         return None
 
 
-def extract_location_and_intent_enhanced(
-    message: str, api_base_url: str, api_key: str, datastore_path: Path
-) -> Optional[Dict]:
+def extract_location_and_intent_enhanced(message: str, api_base_url: str, api_key: str, datastore_path: Path) -> Optional[Dict]:
     """
     Extracts location and intent from a message using LLM and additional geospatial context.
 
@@ -364,8 +354,7 @@ def build_local_context(
     radius = None
     if message:
         pattern = re.compile(
-            r"\bwithin\s*([\d\.]+)\s*"
-            r"(kilometers?|km|meters?|m|yards?|yd|feet|foot|ft)\b",
+            r"\bwithin\s*([\d\.]+)\s*" r"(kilometers?|km|meters?|m|yards?|yd|feet|foot|ft)\b",
             re.IGNORECASE,
         )
 
@@ -399,9 +388,7 @@ def build_local_context(
     lon = location_coords["lon"]
 
     # Context header for the exact data query
-    context.append(
-        f"EXACT DATA for {location} within {radius} meters - this is the complete dataset for your query. IMPORTANT: Mention the community transcripts in your response if there are any in local context:"
-    )
+    context.append(f"EXACT DATA for {location} within {radius} meters - this is the complete dataset for your query. IMPORTANT: Mention the community transcripts in your response if there are any in local context:")
 
     try:
         # Query 911 data (shots fired incidents) from the API
@@ -422,17 +409,10 @@ def build_local_context(
             local_shots = []
             for shot in shots_data:
                 if "latitude" in shot and "longitude" in shot:
-                    shot_lat, shot_lon = float(shot["latitude"]), float(
-                        shot["longitude"]
-                    )
-                    lat1, lon1, lat2, lon2 = map(
-                        math.radians, [lat, lon, shot_lat, shot_lon]
-                    )
+                    shot_lat, shot_lon = float(shot["latitude"]), float(shot["longitude"])
+                    lat1, lon1, lat2, lon2 = map(math.radians, [lat, lon, shot_lat, shot_lon])
                     dlat, dlon = lat2 - lat1, lon2 - lon1
-                    a = (
-                        math.sin(dlat / 2) ** 2
-                        + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
-                    )
+                    a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
                     distance = 6371000 * 2 * math.asin(math.sqrt(a))
 
                     if distance <= radius:
@@ -447,9 +427,7 @@ def build_local_context(
                         dt = datetime.datetime.fromisoformat(date_str)
                     except ValueError:
                         try:
-                            dt = datetime.datetime.strptime(
-                                date_str, "%a, %d %b %Y %H:%M:%S GMT"
-                            )
+                            dt = datetime.datetime.strptime(date_str, "%a, %d %b %Y %H:%M:%S GMT")
                         except ValueError:
                             continue
                     yr = dt.year
@@ -460,13 +438,9 @@ def build_local_context(
                 context.append("Shots fired breakdown by year:")
                 for yr in sorted(shots_by_year):
                     data = shots_by_year[yr]
-                    context.append(
-                        f"- {yr}: {data['total']} incidents, {data['confirmed']} confirmed"
-                    )
+                    context.append(f"- {yr}: {data['total']} incidents, {data['confirmed']} confirmed")
             else:
-                context.append(
-                    f"No shots fired incidents found within {radius}m of {location}."
-                )
+                context.append(f"No shots fired incidents found within {radius}m of {location}.")
 
         # Query 911 data (homicides and shots fired) from the API
         response_hom = requests.get(
@@ -487,10 +461,7 @@ def build_local_context(
                     # haversine calculation
                     φ1, λ1, φ2, λ2 = map(math.radians, [lat, lon, lat2, lon2])
                     dφ, dλ = φ2 - φ1, λ2 - λ1
-                    a = (
-                        math.sin(dφ / 2) ** 2
-                        + math.cos(φ1) * math.cos(φ2) * math.sin(dλ / 2) ** 2
-                    )
+                    a = math.sin(dφ / 2) ** 2 + math.cos(φ1) * math.cos(φ2) * math.sin(dλ / 2) ** 2
                     dist = 6371000 * 2 * math.asin(math.sqrt(a))
                     if dist <= radius:
                         local_homs.append(ev)
@@ -504,10 +475,8 @@ def build_local_context(
                         dt = datetime.datetime.fromisoformat(h["date"])
                     except ValueError:
                         try:
-                            dt = datetime.datetime.strptime(
-                                h["date"], "%a, %d %b %Y %H:%M:%S GMT"
-                            )
-                        except:
+                            dt = datetime.datetime.strptime(h["date"], "%a, %d %b %Y %H:%M:%S GMT")
+                        except Exception:
                             continue
                     homs_by_year[dt.year] += 1
 
@@ -515,9 +484,7 @@ def build_local_context(
                 for yr in sorted(homs_by_year):
                     context.append(f"- {yr}: {homs_by_year[yr]} homicides")
             else:
-                context.append(
-                    f"No homicide incidents found within {radius}m of {location}."
-                )
+                context.append(f"No homicide incidents found within {radius}m of {location}.")
 
         # Query 311 data (city services) from the API
         response_311 = requests.get(
@@ -536,17 +503,10 @@ def build_local_context(
             local_311 = []
             for incident in data_311:
                 if "latitude" in incident and "longitude" in incident:
-                    inc_lat, inc_lon = float(incident["latitude"]), float(
-                        incident["longitude"]
-                    )
-                    lat1, lon1, lat2, lon2 = map(
-                        math.radians, [lat, lon, inc_lat, inc_lon]
-                    )
+                    inc_lat, inc_lon = float(incident["latitude"]), float(incident["longitude"])
+                    lat1, lon1, lat2, lon2 = map(math.radians, [lat, lon, inc_lat, inc_lon])
                     dlat, dlon = lat2 - lat1, lon2 - lon1
-                    a = (
-                        math.sin(dlat / 2) ** 2
-                        + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
-                    )
+                    a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
                     distance = 6371000 * 2 * math.asin(math.sqrt(a))  # meters
 
                     if distance <= radius:
@@ -566,40 +526,26 @@ def build_local_context(
                     type_counts = {}
                     for incident in intent_related:
                         incident_type = incident.get("type", "Unknown")
-                        type_counts[incident_type] = (
-                            type_counts.get(incident_type, 0) + 1
-                        )
+                        type_counts[incident_type] = type_counts.get(incident_type, 0) + 1
 
                     context.append(f"311 complaints about {intent} within {radius}m:")
-                    for incident_type, count in sorted(
-                        type_counts.items(), key=lambda x: x[1], reverse=True
-                    )[:3]:
+                    for incident_type, count in sorted(type_counts.items(), key=lambda x: x[1], reverse=True)[:3]:
                         context.append(f"- {count} reports of {incident_type}")
                 else:
                     type_counts = {}
                     for incident in local_311:
                         incident_type = incident.get("type", "Unknown")
-                        type_counts[incident_type] = (
-                            type_counts.get(incident_type, 0) + 1
-                        )
+                        type_counts[incident_type] = type_counts.get(incident_type, 0) + 1
 
                     context.append(f"Other 311 complaints within {radius}m:")
-                    for incident_type, count in sorted(
-                        type_counts.items(), key=lambda x: x[1], reverse=True
-                    )[:3]:
+                    for incident_type, count in sorted(type_counts.items(), key=lambda x: x[1], reverse=True)[:3]:
                         context.append(f"- {count} reports of {incident_type}")
             else:
-                context.append(
-                    f"No 311 complaints found within {radius}m of {location}."
-                )
+                context.append(f"No 311 complaints found within {radius}m of {location}.")
 
         # Process community transcripts if they exist in the datastore
         if datastore_path.exists():
-            txt_files = [
-                f
-                for f in datastore_path.iterdir()
-                if f.suffix.lower() == ".txt" and not f.name.startswith(".")
-            ]
+            txt_files = [f for f in datastore_path.iterdir() if f.suffix.lower() == ".txt" and not f.name.startswith(".")]
 
             location_lower = location.lower()
             intent_lower = intent.lower()
@@ -608,9 +554,7 @@ def build_local_context(
             for txt_file in txt_files:
                 try:
                     content = txt_file.read_text(encoding="utf-8")
-                    lines = [
-                        line.strip() for line in content.split("\n") if line.strip()
-                    ]
+                    lines = [line.strip() for line in content.split("\n") if line.strip()]
 
                     for line in lines:
                         line_lower = line.lower()
@@ -624,11 +568,7 @@ def build_local_context(
 
             if relevant_quotes:
                 context.append("Community Transcripts:")
-                priority_quotes = [
-                    q
-                    for q in relevant_quotes
-                    if location_lower in q.lower() and intent_lower in q.lower()
-                ]
+                priority_quotes = [q for q in relevant_quotes if location_lower in q.lower() and intent_lower in q.lower()]
                 if priority_quotes:
                     context.extend([f"- {q}" for q in priority_quotes[:2]])
                 else:
@@ -636,12 +576,8 @@ def build_local_context(
 
         # If no data found, add a message indicating no incidents
         if len(context) <= 1:
-            context.append(
-                f"No local incident data found within {radius}m of {location}."
-            )
-            context.append(
-                f"This location appears to have no recorded incidents in the immediate vicinity."
-            )
+            context.append(f"No local incident data found within {radius}m of {location}.")
+            context.append("This location appears to have no recorded incidents in the immediate vicinity.")
 
     except Exception as e:
         print(f"Error building local context: {e}")
@@ -650,9 +586,7 @@ def build_local_context(
     return context
 
 
-def get_map_preview_data(
-    location_coords: Dict, is_near_query: bool, location_name: str = ""
-) -> Dict:
+def get_map_preview_data(location_coords: Dict, is_near_query: bool, location_name: str = "") -> Dict:
     """
     Generates the map data for previewing the location, including the center, zoom level,
     bounds for the map (with offsets), and a marker for the specified location.
@@ -718,9 +652,7 @@ def construct_prompt(question: str, context: List[str]) -> str:
     return "\n".join(prompt_parts)
 
 
-def process_geospatial_message(
-    message: str, datastore_path: Path, api_base_url: str, api_key: str
-) -> Dict:
+def process_geospatial_message(message: str, datastore_path: Path, api_base_url: str, api_key: str) -> Dict:
     """
     The main function that processes a geospatial message, interacts with APIs, and
     generates an enhanced prompt for the LLM endpoint, along with map preview data.
@@ -736,9 +668,7 @@ def process_geospatial_message(
     """
     try:
         # Extract location and intent information from the message
-        location_info = extract_location_and_intent_enhanced(
-            message, api_base_url, api_key, datastore_path
-        )
+        location_info = extract_location_and_intent_enhanced(message, api_base_url, api_key, datastore_path)
 
         if not location_info:
             return {"enhanced_prompt": message, "map_data": None}

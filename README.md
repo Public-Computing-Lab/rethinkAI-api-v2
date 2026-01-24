@@ -13,26 +13,26 @@ This platform enables:
 ## 📁 Project Structure
 
 ```
-ml-misi-community-sentiment/
+rethinkAI-api-v2/
 ├── api/                          # Flask REST API (v2.0)
-│   ├── api_v2.py                 # Main API endpoint (agent-powered)
-│   ├── api.py                    # Legacy API (deprecated)
+│   ├── api.py                    # Main API endpoint (agent-powered)
 │   ├── datastore/                # Static data files
-│   ├── prompts/                  # LLM prompt templates
-│   └── requirements.txt          # API dependencies
+│   └── prompts/                  # LLM prompt templates
 │
-├── on_the_porch/                 # Core chatbot and data processing
-│   ├── unified_chatbot.py        # Main chatbot orchestration
-│   ├── sql_chat/                 # SQL query generation and execution
-│   ├── rag stuff/                # RAG retrieval system
+├── credentials/                  # Google credential store    
+│
+├── main_chat/                    # Core chatbot and data processing
+│   ├── chat_route.py             # Main chatbot orchestration
+│   ├── sql_pipeline/             # SQL query generation and execution
+│   ├── rag_pipeline/             # RAG retrieval system
 │   ├── data_ingestion/           # Automated data sync (Google Drive, Email)
 │   ├── calendar/                 # Event extraction and processing
 │   └── new_metadata/             # Database schema metadata generation
 │
 ├── dataset-documentation/        # Dataset documentation (see below)
-├── test_frontend/                # Frontend testing interface
-├── public/                      # Static frontend assets
-└── Old_exp/                     # Legacy experiments (ignored in git)
+├── public/                       # Frontend webapp
+├── scripts/                      # Deployment and Maintenance Scripts
+└── requirements.txt              # API dependencies
 ```
 
 ## 🚀 Quick Start
@@ -85,12 +85,12 @@ Once you’ve followed the steps in `demo/README.md`, you can **skip the Install
 
 5. **Set up database**
    - Create MySQL database: `rethink_ai_boston`
-   - Run database setup scripts (see `on_the_porch/data_ingestion/`)
+   - Run database setup scripts (see `main_chat/data_ingestion/`)
 
 6. **Run the API**
    ```bash
    cd api
-   python api_v2.py
+   python api.py
    ```
    The API will start on `http://127.0.0.1:8888`
 
@@ -140,11 +140,11 @@ The system automatically syncs data from:
 - **Google Drive**: Client-uploaded documents (PDF, DOCX, TXT, MD)
 - **Email Newsletters**: Automated extraction of events to calendar
 
-See `on_the_porch/data_ingestion/README.md` for details.
+See `main_chat/data_ingestion/README.md` for details.
 
 ## 🔌 API Endpoints
 
-### Agent API v2.0 (`api/api_v2.py`)
+### Agent API v2.0 (`api/api.py`)
 
 - **POST /chat** - Main chat interaction with intelligent routing
 - **POST /log** - Log interactions
@@ -175,29 +175,28 @@ This project implements a **hybrid AI system** that combines:
 
 ### Key Components
 
-1. **Unified Chatbot** (`on_the_porch/unified_chatbot.py`)
+1. **Unified Chatbot** (`main_chat/chat_route.py`)
    - Routes questions to SQL, RAG, or hybrid mode
    - Manages conversation history and context
    - Handles source citations
 
-2. **Data Ingestion Pipeline** (`on_the_porch/data_ingestion/`)
+2. **Data Ingestion Pipeline** (`main_chat/data_ingestion/`)
    - Automated sync from Google Drive and email
    - Event extraction from newsletters
    - Vector database updates
 
-3. **API Layer** (`api/api_v2.py`)
+3. **API Layer** (`api/api.py`)
    - RESTful endpoints for frontend integration
    - Session management
    - Interaction logging
 
 ### Recommended Next Steps
 
-1. **Start Here**: Review `on_the_porch/unified_chatbot.py` to understand the core routing logic
-2. **Test the API**: Use `api/test_api_v2.py` to test endpoints
+1. **Start Here**: Review `main_chat/chat_route.py` to understand the core routing logic
+2. **Test the API**: Use `api/test_api.py` to test endpoints
 3. **Explore Data**: Check `dataset-documentation/` for available data sources
 4. **Frontend Integration**: 
    - See `public/` for the production frontend (see `public/README.md` for details)
-   - See `test_frontend/` for example frontend code
    - Both can be used to test the API via a web interface
 
 ### Development Workflow
@@ -206,7 +205,7 @@ This project implements a **hybrid AI system** that combines:
    ```bash
    # Start API server
    cd api
-   python api_v2.py
+   python api.py
    
    # Test with curl or Postman
    curl -X POST http://localhost:8888/chat \
@@ -218,12 +217,12 @@ This project implements a **hybrid AI system** that combines:
 2. **Data Updates**
    ```bash
    # Run data ingestion
-   cd on_the_porch/data_ingestion
+   cd main_chat/data_ingestion
    python boston_data_sync/boston_data_sync.py
    ```
 
 3. **Database Setup**
-   - See `on_the_porch/data_ingestion/README.md` for database initialization
+   - See `main_chat/data_ingestion/README.md` for database initialization
 
 ### Common Issues & Solutions
 
@@ -235,15 +234,15 @@ This project implements a **hybrid AI system** that combines:
 ### Documentation References
 
 - API Documentation: `api/README.md`
-- Data Ingestion: `on_the_porch/data_ingestion/README.md`
+- Data Ingestion: `main_chat/data_ingestion/README.md`
 - Dataset Info: `dataset-documentation/README.md`
-- API v2 Details: `on_the_porch/api_readme.md`
+- API v2 Details: `main_chat/api_readme.md`
 
 ## 🌐 Deployment
 
 ### DreamHost Setup (needs to be tested)
 
-See `scripts/dreamhost/` for deployment scripts:
+See `scripts/dreamhost/` for skeleton deployment scripts:
 - `setup.sh` - Initial server setup
 - `deploy.sh` - Application deployment
 - `database_setup.sh` - Database initialization
@@ -273,4 +272,3 @@ See `LICENSE.md` for license information.
 
 ---
 
-**Note**: The `Old_exp/` folder contains legacy experiments and is excluded from version control. Focus on the `api/` and `on_the_porch/` directories for active development.

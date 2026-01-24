@@ -105,16 +105,16 @@ from pathlib import Path
 PROJECT_DIR = Path(__file__).parent
 sys.path.insert(0, str(PROJECT_DIR))
 sys.path.insert(0, str(PROJECT_DIR / "api"))
-sys.path.insert(0, str(PROJECT_DIR / "on_the_porch"))
-sys.path.insert(0, str(PROJECT_DIR / "on_the_porch" / "rag stuff"))
+sys.path.insert(0, str(PROJECT_DIR / "main_chat"))
+sys.path.insert(0, str(PROJECT_DIR / "main_chat" / "rag stuff"))
 
 # Load environment variables
 from dotenv import load_dotenv
 load_dotenv(PROJECT_DIR / "api" / ".env")
-load_dotenv(PROJECT_DIR / "on_the_porch" / ".env")
+load_dotenv(PROJECT_DIR / "main_chat" / ".env")
 
 # Import and configure application
-from api.api_v2 import app, _bootstrap_env, _fix_retrieval_vectordb_path, ensure_interaction_log_table
+from api.api import app, _bootstrap_env, _fix_retrieval_vectordb_path, ensure_interaction_log_table
 
 # Bootstrap environment
 _bootstrap_env()
@@ -157,7 +157,7 @@ set -e  # Exit on error
 # Configuration
 PROJECT_DIR="$HOME/ml-misi-community-sentiment"
 VENV_DIR="$PROJECT_DIR/venv"
-INGESTION_DIR="$PROJECT_DIR/on_the_porch/data_ingestion"
+INGESTION_DIR="$PROJECT_DIR/main_chat/data_ingestion"
 LOG_DIR="$PROJECT_DIR/logs"
 SCRIPT_LOG="$LOG_DIR/daily_ingestion.log"
 
@@ -212,10 +212,10 @@ cat > "$CRON_FILE" <<EOF
 
 # Alternative: Run individual components separately (if needed)
 # Daily Boston data sync only (runs at 2 AM)
-# 0 2 * * * cd $PROJECT_DIR/on_the_porch/data_ingestion && $VENV_DIR/bin/python boston_data_sync/boston_data_sync.py >> $LOG_DIR/data_sync.log 2>&1
+# 0 2 * * * cd $PROJECT_DIR/main_chat/data_ingestion && $VENV_DIR/bin/python boston_data_sync/boston_data_sync.py >> $LOG_DIR/data_sync.log 2>&1
 
 # Weekly vector database rebuild (runs Sunday at 4 AM) - Optional, usually handled by daily ingestion
-# 0 4 * * 0 cd $PROJECT_DIR/on_the_porch/data_ingestion && $VENV_DIR/bin/python build_vectordb.py >> $LOG_DIR/vectordb_build.log 2>&1
+# 0 4 * * 0 cd $PROJECT_DIR/main_chat/data_ingestion && $VENV_DIR/bin/python build_vectordb.py >> $LOG_DIR/vectordb_build.log 2>&1
 EOF
 
 print_status "Cron job template created: $CRON_FILE"

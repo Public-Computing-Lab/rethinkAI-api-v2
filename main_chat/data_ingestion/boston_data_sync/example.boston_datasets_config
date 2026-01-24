@@ -1,0 +1,46 @@
+{
+  "datasets": [
+    {
+      "name": "crime_incident_reports",
+      "resource_id": "b973d8cb-eeb2-4e7e-99da-c92938efc9c0",
+      "table_name": "crime_incident_reports",
+      "primary_key": "INCIDENT_NUMBER",
+      "date_field": "OCCURRED_ON_DATE",
+      "description": "Crime incident reports from Boston Police Department",
+      "enabled": true
+    },
+    {
+      "name": "311_service_requests",
+      "resource_id": "254adca6-64ab-4c5c-9fc0-a6da622be185",
+      "table_name": "bos311_data",
+      "primary_key": "case_enquiry_id",
+      "date_field": "open_date",
+      "date_field_db": "open_dt",
+      "exclude_columns": ["_id", 
+                          "assigned_team", 
+                          "closure_comments",
+                          "target_close_date",
+                          "report_source"
+      ],
+      "field_mapping": {
+        "case_id": "case_enquiry_id",        
+        "open_date": "open_dt",
+        "case_topic": "type",        
+        "close_date": "closed_dt",
+        "full_address": "location",
+        "street_name": "location_street_name",
+        "zip_code": "location_zipcode",
+        "public_works_district": "pwd_district"        
+      },
+      "description": "311 service requests - NEW SYSTEM (all channels of engagement). Fields mapped: open_date -> open_dt, case_topic -> type for API compatibility.",
+      "enabled": true
+    }
+  ],
+  "sync_settings": {
+    "batch_size": 20000,
+    "max_records_per_sync": null,
+    "rate_limit_delay": 1.0,
+    "incremental_sync": true,
+    "days_to_sync":3650
+}
+}

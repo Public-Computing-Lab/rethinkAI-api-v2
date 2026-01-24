@@ -94,8 +94,8 @@ fi
 print_status "Creating necessary directories..."
 mkdir -p "$PROJECT_DIR/api/datastore"
 mkdir -p "$PROJECT_DIR/api/prompts"
-mkdir -p "$PROJECT_DIR/on_the_porch/vectordb_new"
-mkdir -p "$PROJECT_DIR/on_the_porch/data_ingestion/temp_downloads"
+mkdir -p "$PROJECT_DIR/main_chat/vectordb_new"
+mkdir -p "$PROJECT_DIR/main_chat/data_ingestion/temp_downloads"
 mkdir -p "$PROJECT_DIR/logs"
 
 # Step 7: Set up environment files
@@ -109,18 +109,18 @@ if [ ! -f "$PROJECT_DIR/api/.env" ]; then
     fi
 fi
 
-if [ ! -f "$PROJECT_DIR/on_the_porch/.env" ]; then
-    if [ -f "$PROJECT_DIR/on_the_porch/.env.example" ]; then
-        cp "$PROJECT_DIR/on_the_porch/.env.example" "$PROJECT_DIR/on_the_porch/.env"
-        print_warning "Created on_the_porch/.env from example. Please edit with your values!"
+if [ ! -f "$PROJECT_DIR/main_chat/.env" ]; then
+    if [ -f "$PROJECT_DIR/main_chat/.env.example" ]; then
+        cp "$PROJECT_DIR/main_chat/.env.example" "$PROJECT_DIR/main_chat/.env"
+        print_warning "Created main_chat/.env from example. Please edit with your values!"
     else
-        print_error "on_the_porch/.env.example not found. Please create on_the_porch/.env manually."
+        print_error "main_chat/.env.example not found. Please create main_chat/.env manually."
     fi
 fi
 
-if [ ! -f "$PROJECT_DIR/on_the_porch/data_ingestion/.env" ]; then
-    if [ -f "$PROJECT_DIR/on_the_porch/data_ingestion/.env.example" ]; then
-        cp "$PROJECT_DIR/on_the_porch/data_ingestion/.env.example" "$PROJECT_DIR/on_the_porch/data_ingestion/.env"
+if [ ! -f "$PROJECT_DIR/main_chat/data_ingestion/.env" ]; then
+    if [ -f "$PROJECT_DIR/main_chat/data_ingestion/.env.example" ]; then
+        cp "$PROJECT_DIR/main_chat/data_ingestion/.env.example" "$PROJECT_DIR/main_chat/data_ingestion/.env"
         print_warning "Created data_ingestion/.env from example. Please edit with your values!"
     else
         print_error "data_ingestion/.env.example not found. Please create data_ingestion/.env manually."
@@ -129,7 +129,7 @@ fi
 
 # Step 8: Set permissions
 print_status "Setting file permissions..."
-chmod +x "$PROJECT_DIR/api/api_v2.py" 2>/dev/null || true
+chmod +x "$PROJECT_DIR/api/api.py" 2>/dev/null || true
 chmod 755 "$PROJECT_DIR" 2>/dev/null || true
 
 # Step 9: Create log directory with proper permissions
@@ -142,7 +142,7 @@ echo ""
 print_warning "IMPORTANT: Next steps:"
 echo "  1. Edit environment files (.env) with your API keys and database credentials"
 echo "  2. Run database_setup.sh to initialize the database"
-echo "  3. Test the API with: python api/api_v2.py"
+echo "  3. Test the API with: python api/api.py"
 echo "  4. Set up a WSGI server (gunicorn) for production"
 echo "  5. Configure cron jobs for data ingestion (see deploy.sh)"
 

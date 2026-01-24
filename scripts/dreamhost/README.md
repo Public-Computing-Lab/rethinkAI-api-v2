@@ -26,8 +26,8 @@ This directory contains scripts for deploying the RethinkAI application on Dream
 
 3. **Configure environment variables**:
    - Edit `api/.env` with your API keys and database credentials
-   - Edit `on_the_porch/.env` with your configuration
-   - Edit `on_the_porch/data_ingestion/.env` for data ingestion
+   - Edit `main_chat/.env` with your configuration
+   - Edit `main_chat/data_ingestion/.env` for data ingestion
 
 4. **Set up the database**:
    ```bash

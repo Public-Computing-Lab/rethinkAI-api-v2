@@ -29,8 +29,8 @@ Edit these files with your actual values:
 
 ```bash
 nano api/.env
-nano on_the_porch/.env
-nano on_the_porch/data_ingestion/.env
+nano main_chat/.env
+nano main_chat/data_ingestion/.env
 ```
 
 Required values:
@@ -88,7 +88,7 @@ Save and exit.
 # Test API locally
 cd ~/ml-misi-community-sentiment/api
 source ../venv/bin/activate
-python api_v2.py
+python api.py
 ```
 
 ## 10. Check Logs
