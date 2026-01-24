@@ -14,8 +14,8 @@ GEMINI_EMBED_MODEL=text-embedding-004
 # ============================================================================
 
 API_VERSION=2.1
-RETHINKAI_API_KEYS=
-RETHINKAI_API_KEY=
+RETHINKAI_API_KEYS=banana
+RETHINKAI_API_KEY=banana
 API_HOST=
 API_PORT=
 API_BASE_URL=

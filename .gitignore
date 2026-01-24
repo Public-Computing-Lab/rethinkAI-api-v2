@@ -93,6 +93,7 @@ credentials/*
 !experiment-PIT/public/data/process_911.ts
 api/datastore/*
 main_chat/rag_stuff/data/*
+vectordb_new/*
 
 # exception to the rule
 **/cache/.gitkeep
