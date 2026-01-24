@@ -80,6 +80,7 @@ cookies.txt
 
 # credentails
 credentials/*
+!credentials/.gitkeep
 
 # nova
 .nova
