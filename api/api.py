@@ -198,7 +198,24 @@ def extract_sources(mode: str, result: Dict[str, Any]) -> List[Dict[str, str]]:
         # Extract from RAG metadata
         metadata = result.get("metadata", [])
         seen = set()
-        for meta in metadata[:5]:  # Limit to 5 sources
+
+        # PRIORITIZE POLICY SOURCES FIRST
+        # Split metadata by doc_type
+        policy_meta = [m for m in metadata if m.get("doc_type") == "policy"]
+        other_meta = [m for m in metadata if m.get("doc_type") != "policy"]
+
+        # Process policy sources first (up to 3)
+        for meta in policy_meta[:5]:
+            source = meta.get("source", "Unknown")
+            doc_type = meta.get("doc_type", "unknown")
+            key = f"{source}:{doc_type}"
+            if key not in seen:
+                seen.add(key)
+                sources.append({"type": "rag", "source": source, "doc_type": doc_type})
+
+        # Then add other sources (transcripts, etc.) to fill remaining slots
+        remaining_slots = 10 - len(sources)
+        for meta in other_meta[:remaining_slots]:
             source = meta.get("source", "Unknown")
             doc_type = meta.get("doc_type", "unknown")
             key = f"{source}:{doc_type}"
@@ -220,10 +237,26 @@ def extract_sources(mode: str, result: Dict[str, Any]) -> List[Dict[str, str]]:
             if match:
                 sources.append({"type": "sql", "table": match.group(1)})
 
-        # RAG sources
+        # RAG sources - prioritize policies
         rag_metadata = rag_part.get("metadata", []) if isinstance(rag_part, dict) else []
         seen = set()
-        for meta in rag_metadata[:3]:  # Limit to 3 RAG sources in hybrid
+
+        # Split by doc_type
+        policy_meta = [m for m in rag_metadata if m.get("doc_type") == "policy"]
+        other_meta = [m for m in rag_metadata if m.get("doc_type") != "policy"]
+
+        # Add policy sources first (up to 2 in hybrid mode)
+        for meta in policy_meta[:4]:
+            source = meta.get("source", "Unknown")
+            doc_type = meta.get("doc_type", "unknown")
+            key = f"{source}:{doc_type}"
+            if key not in seen:
+                seen.add(key)
+                sources.append({"type": "rag", "source": source, "doc_type": doc_type})
+
+        # Then other sources
+        remaining_slots = 8 - len(sources)
+        for meta in other_meta[:remaining_slots]:
             source = meta.get("source", "Unknown")
             doc_type = meta.get("doc_type", "unknown")
             key = f"{source}:{doc_type}"
