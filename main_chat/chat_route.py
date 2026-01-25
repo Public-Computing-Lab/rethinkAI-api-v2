@@ -262,6 +262,15 @@ def _route_question(question: str) -> Dict[str, Any]:
         "   - Questions asking about: what a policy/document says, what a program aims to achieve, document content, newsletter content\n"
         "   - Examples: 'What does Slow Streets aim to achieve?', 'What strategies does the Anti-Displacement Plan propose?', 'What was in the newsletter?'\n"
         "   - DO NOT use 'sql' for document content questions\n\n"
+        "RULE 5.1: SPECIFIC vs GENERAL POLICY QUESTIONS\n"
+        "   - If question mentions a SPECIFIC policy by name (e.g., 'Anti-Displacement Plan', 'Slow Streets', 'Imagine Boston 2030'):\n"
+        "     * Set policy_sources to that specific document (e.g., ['Boston Anti-Displacement Plan Analysis.txt'])\n"
+        "     * ALWAYS also add relevant transcript_tags for community perspective\n"
+        "   - If question is GENERAL about policy/planning but doesn't name a specific document:\n"
+        "     * Examples: 'What are current policy issues?', 'What policies affect housing?', 'What is being planned for the neighborhood?'\n"
+        "     * Set policy_sources to null (will search ALL policy documents)\n"
+        "     * Add relevant transcript_tags\n"
+        "     * Set k to at least 10 to get diverse policy coverage\n\n"
         "RULE 6: COMBINED DATA + CONTEXT → 'hybrid' mode\n"
         "   - Questions that explicitly ask for BOTH numbers/data AND context/explanation\n"
         "   - Examples: 'How many homicides and what concerns come up?', 'Show trends and how policies address them'\n"
@@ -579,12 +588,14 @@ def _run_rag(question: str, plan: Dict[str, Any], conversation_history: Optional
     combined_chunks: List[str] = []
     combined_meta: List[Dict[str, Any]] = []
 
-    # NOTE: Calendar events are now SQL-only (weekly_events table), not in vector DB.
-    # Event queries should use 'sql' or 'hybrid' mode which handles them via SQL.
+    # Increase k for better source diversity
+    # Retrieve more chunks to get more diverse sources in the citations
+    # Use at least 20 chunks to ensure we get multiple unique sources
+    retrieval_k = max(k * 3, 20)  # At least 20 chunks for source diversity
 
     # transcripts
     try:
-        t_res = rag_retrieval.retrieve_transcripts(question, tags=tags, k=k)
+        t_res = rag_retrieval.retrieve_transcripts(question, tags=tags, k=retrieval_k)
         t_chunks = t_res.get("chunks", [])
         print(f"  📝 Transcripts: {len(t_chunks)} chunks found")
         combined_chunks.extend(t_chunks)
@@ -595,18 +606,26 @@ def _run_rag(question: str, plan: Dict[str, Any], conversation_history: Optional
     # policies
     try:
         if sources:
+            print(f"  🔍 Policy sources requested: {sources}")
+            # When specific policy sources are requested
             for src in sources:
-                p_res = rag_retrieval.retrieve_policies(question, k=k, source=src)
-                combined_chunks.extend(p_res.get("chunks", []))
+                print(f"  🔍 Querying policy source: {src}")
+                p_res = rag_retrieval.retrieve_policies(question, k=retrieval_k, source=src)
+                p_chunks = p_res.get("chunks", [])
+                print(f"    📋 Found {len(p_chunks)} chunks from {src}")
+                combined_chunks.extend(p_chunks)
                 combined_meta.extend(p_res.get("metadata", []))
         else:
-            p_res = rag_retrieval.retrieve_policies(question, k=k)
+            print("  🔍 No specific policy sources, searching all policies")
+            p_res = rag_retrieval.retrieve_policies(question, k=retrieval_k)
             p_chunks = p_res.get("chunks", [])
             print(f"  📋 Policies: {len(p_chunks)} chunks found")
             combined_chunks.extend(p_chunks)
             combined_meta.extend(p_res.get("metadata", []))
     except Exception as e:
         print(f"  ⚠️ Policy retrieval error: {e}")
+
+    print(f"  📊 Total combined chunks: {len(combined_chunks)} (transcripts + policies)")
 
     answer = _compose_rag_answer(question, combined_chunks, combined_meta, conversation_history)
     return {"answer": answer, "chunks": combined_chunks, "metadata": combined_meta}
