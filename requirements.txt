@@ -3,11 +3,10 @@ pymysql
 pocketflow 
 mysql
 mysql-connector-python
-google-generativeai
 dotenv
 flask-cors 
 google.generativeai 
-langchain-community 
+langchain-chroma
 bs4
 requests
 pandas
@@ -20,3 +19,6 @@ langchain-core
 google 
 google_auth_oauthlib
 chromadb
+google-genai
+gunicorn
+gevent

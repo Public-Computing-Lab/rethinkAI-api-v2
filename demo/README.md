@@ -72,7 +72,7 @@ From the project root, in **one terminal**:
 
 ```bash
 cd api
-python api_v2.py
+python api.py
 ```
 
 The API will start on `http://127.0.0.1:8888`.
@@ -89,7 +89,7 @@ Then open `http://localhost:8000` in your browser. Make sure the backend is runn
 ### Notes
 
 - The demo database and vector store are for evaluation only and are not up to date.
-- For full production setup and data ingestion, see the main `README.md` and `on_the_porch/data_ingestion/README.md`.
+- For full production setup and data ingestion, see the main `README.md` and `main_chat/data_ingestion/README.md`.
  
 ### Troubleshooting
 

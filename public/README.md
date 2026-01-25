@@ -7,7 +7,7 @@ A simple frontend for the Dorchester Community Assistant chatbot.
 1. **Start the backend API:**
    ```bash
    cd ml-misi-community-sentiment
-   python api/api_v2.py
+   python api/api.py
    ```
 
 2. **Serve the frontend:**
@@ -26,18 +26,7 @@ A simple frontend for the Dorchester Community Assistant chatbot.
 
 ### API Connection
 
-Edit `app.js` or `api.js` to configure the API connection:
-
-```javascript
-const API_BASE_URL = 'http://127.0.0.1:8888';
-const API_KEY = 'banana';  // Must match backend RETHINKAI_API_KEYS
-```
-
-### API Authentication
-
-The frontend requires a valid API key. The default is `'banana'` which matches the backend default.
-
-If you've changed the backend keys in `.env`, update the `API_KEY` in both `app.js` and `api.js`.
+Run node build to generate config.js w/ credentials from .env
 
 ## Files
 

@@ -8,18 +8,23 @@ set -e  # Exit on error
 # Configuration
 PROJECT_DIR="$HOME/source/Spark-F25"
 VENV_DIR="$PROJECT_DIR/venv"
-INGESTION_DIR="$PROJECT_DIR/on_the_porch/data_ingestion"
+INGESTION_DIR="$PROJECT_DIR/main_chat/data_ingestion"
 LOG_DIR="$PROJECT_DIR/logs"
 SCRIPT_LOG="$LOG_DIR/daily_ingestion.log"
 
 # Create log directory if it doesn't exist
 mkdir -p "$LOG_DIR"
 
-# Activate virtual environment
-source "$VENV_DIR/bin/activate"
+echo "Checking paths..."
+echo "Project dir exists: $([ -d "$PROJECT_DIR" ] && echo YES || echo NO)"
+echo "Venv dir exists: $([ -d "$VENV_DIR" ] && echo YES || echo NO)"
+echo "Ingestion dir exists: $([ -d "$INGESTION_DIR" ] && echo YES || echo NO)"
 
-# Change to ingestion directory
-cd "$INGESTION_DIR"
+cd "$INGESTION_DIR" || exit 1
+echo "Changed to: $(pwd)"
+
+source "$VENV_DIR/bin/activate"
+echo "Python location: $(which python3)"
 
 # Run the main daily ingestion script
 {
@@ -27,7 +32,7 @@ cd "$INGESTION_DIR"
     echo "Daily Ingestion Started: $(date)" 
     echo "==========================================" 
     
-    python main_daily_ingestion.py  2>&1
+    python3 main_daily_ingestion.py  2>&1
     
     EXIT_CODE=$?
     

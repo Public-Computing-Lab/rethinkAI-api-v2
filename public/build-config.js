@@ -54,8 +54,9 @@ function loadEnv(envPath = '.env') {
 function generateConfig() {
   console.log('🔧 Building configuration from .env...\n');
   
-  // Load environment variables
-  const env = loadEnv('.env');
+  // Load environment variables from project root
+  const envPath = path.join(__dirname, '..', '.env');
+  const env = loadEnv(envPath);
   
   if (Object.keys(env).length === 0) {
 	console.error('❌ No environment variables loaded');

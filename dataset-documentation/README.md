@@ -12,7 +12,7 @@ The platform uses a hybrid data architecture combining structured (SQL) and unst
 
 **Source**: City of Boston Open Data Portal  
 **Format**: MySQL database table  
-**Update Frequency**: Daily sync via `on_the_porch/data_ingestion/boston_data_sync/`
+**Update Frequency**: Daily sync via `main_chat/data_ingestion/boston_data_sync/`
 
 **Schema**:
 - `id`: Unique request identifier
@@ -43,7 +43,7 @@ The platform uses a hybrid data architecture combining structured (SQL) and unst
 
 **Source**: City of Boston Open Data Portal  
 **Format**: MySQL database table  
-**Update Frequency**: Daily sync via `on_the_porch/data_ingestion/boston_data_sync/`
+**Update Frequency**: Daily sync via `main_chat/data_ingestion/boston_data_sync/`
 
 **Schema**:
 - `id`: Unique report identifier
@@ -68,7 +68,7 @@ The platform uses a hybrid data architecture combining structured (SQL) and unst
 
 **Source**: Extracted from community newsletters via email sync  
 **Format**: MySQL database table (`weekly_events`)  
-**Update Frequency**: Daily via `on_the_porch/data_ingestion/`
+**Update Frequency**: Daily via `main_chat/data_ingestion/`
 
 **Schema**:
 - `id`: Unique event identifier
@@ -89,7 +89,7 @@ The platform uses a hybrid data architecture combining structured (SQL) and unst
 
 **Source**: Google Drive folder + Email newsletters  
 **Format**: ChromaDB vector database  
-**Update Frequency**: Daily sync via `on_the_porch/data_ingestion/`
+**Update Frequency**: Daily sync via `main_chat/data_ingestion/`
 
 **Document Types**:
 - PDF newsletters
@@ -168,17 +168,17 @@ The platform uses a hybrid data architecture combining structured (SQL) and unst
 
 ### Automated Sync Process
 
-1. **Boston Data Sync** (`on_the_porch/data_ingestion/boston_data_sync/`)
+1. **Boston Data Sync** (`main_chat/data_ingestion/boston_data_sync/`)
    - Runs daily via cron job
    - Syncs 311 and 911 data from city APIs
    - Updates MySQL database
 
-2. **Google Drive Sync** (`on_the_porch/data_ingestion/`)
+2. **Google Drive Sync** (`main_chat/data_ingestion/`)
    - Monitors Google Drive folder for new/changed files
    - Processes PDF, DOCX, TXT, MD files
    - Updates vector database
 
-3. **Email Newsletter Sync** (`on_the_porch/data_ingestion/`)
+3. **Email Newsletter Sync** (`main_chat/data_ingestion/`)
    - Checks email inbox daily
    - Extracts events → MySQL
    - Extracts articles → Vector DB
@@ -187,7 +187,7 @@ The platform uses a hybrid data architecture combining structured (SQL) and unst
 
 - Community assets: Update CSV file in `api/datastore/`
 - Static documents: Add to Google Drive folder
-- Database schema: See `on_the_porch/new_metadata/` for metadata generation
+- Database schema: See `main_chat/new_metadata/` for metadata generation
 
 ## Data Retention
 
@@ -206,7 +206,7 @@ The platform uses a hybrid data architecture combining structured (SQL) and unst
 ## Schema Metadata
 
 For detailed database schemas, see:
-- `on_the_porch/new_metadata/` - Auto-generated schema metadata
+- `main_chat/new_metadata/` - Auto-generated schema metadata
 - MySQL metadata: Generated via `generate_mysql_metadata_live.py`
 
 ## Example Data Queries
@@ -239,7 +239,7 @@ results = retrieval.search(query, top_k=5)
 ## Troubleshooting
 
 ### Missing Data
-- Check sync logs: `on_the_porch/data_ingestion/ingestion_log.jsonl`
+- Check sync logs: `main_chat/data_ingestion/ingestion_log.jsonl`
 - Verify API keys and credentials
 - Check database connection
 
@@ -251,6 +251,6 @@ results = retrieval.search(query, top_k=5)
 ## References
 
 - Boston Open Data Portal: https://data.boston.gov
-- Data Ingestion Documentation: `on_the_porch/data_ingestion/README.md`
+- Data Ingestion Documentation: `main_chat/data_ingestion/README.md`
 - API Documentation: `api/README.md`
 
