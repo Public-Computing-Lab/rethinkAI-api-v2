@@ -12,12 +12,13 @@ env/
 pip-log.txt
 pip-delete-this-directory.txt
 conda
-on_the_porch/rag stuff/rags/*
-on_the_porch/pocEnv/*
+main_chat/rag_pipeline/rags/*
+main_chat/pocEnv/*
 
 # 3️⃣ Environment Variables (SECURITY: Protect API Keys & Secrets)
 .env
 *.env
+.env*
 config.json  # If sensitive configs are stored here
 secrets.json
 
@@ -77,6 +78,10 @@ gemini_api.key.txt
 cookies.txt
 *.jsonl
 
+# credentails
+credentials/*
+!credentials/.gitkeep
+
 # nova
 .nova
 
@@ -87,7 +92,8 @@ cookies.txt
 !experiment-PIT/public/data/process_311.ts
 !experiment-PIT/public/data/process_911.ts
 api/datastore/*
-on_the_porch/rag_stuff/data/*
+main_chat/rag_stuff/data/*
+vectordb_new/*
 
 # exception to the rule
 **/cache/.gitkeep
@@ -101,12 +107,12 @@ on_the_porch/rag_stuff/data/*
 !api/datastore/Boston Anti-Displacement Plan Analysis.txt
 !api/*.sql
 !setup/*.sql
-/on_the_porch/vectordb_new
-on_the_porch/data_ingestion/gmail_token.json
-on_the_porch/data_ingestion/gmail_credentials.json
-on_the_porch/data_ingestion/.email_sync_state.json
-on_the_porch/data_ingestion/.sync_state.json
-on_the_porch/data_ingestion/ingestion_log.jsonl
-on_the_porch/data_ingestion/ontheporch-ebc5a60fc214.json
-on_the_porch/data_ingestion/temp_downloads
-on_the_porch/data_ingestion/reset_table.sql
+/main_chat/vectordb_new
+main_chat/data_ingestion/gmail_token.json
+main_chat/data_ingestion/gmail_credentials.json
+main_chat/data_ingestion/.email_sync_state.json
+main_chat/data_ingestion/.sync_state.json
+main_chat/data_ingestion/ingestion_log.jsonl
+main_chat/data_ingestion/ontheporch-ebc5a60fc214.json
+main_chat/data_ingestion/temp_downloads
+main_chat/data_ingestion/reset_table.sql
