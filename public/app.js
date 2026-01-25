@@ -54,8 +54,10 @@ function showError(element, message) {
   if (message) {
     element.textContent = message;
     element.hidden = false;
+    element.style.display = '';  // Reset display
   } else {
     element.hidden = true;
+    element.style.display = 'none';  // Explicitly hide
     element.textContent = '';
   }
 }
@@ -107,13 +109,28 @@ function formatSource(source) {
     // Default fallback for SQL tables
     return `City data from https://data.boston.gov/`;
   } else if (source.type === 'rag' && source.source) {
-    const sourceName = source.source.toLowerCase();
-    // Check if it's an event-related source
-    if (sourceName.includes('event') || sourceName.includes('newsletter') || sourceName.includes('weekly')) {
-      return 'Community newsletters';
+    // Show the actual source filename
+    // Clean it up slightly for display
+    let displayName = source.source;
+    
+    // Remove common suffixes for cleaner display
+    displayName = displayName
+      .replace(/Analysis\.txt$/i, '')
+      .replace(/\.txt$/i, '')
+      .replace(/\.pdf$/i, '')
+      .trim();
+    
+    // Add prefixes based on doc_type if available
+    if (source.doc_type === 'policy') {
+      return `📄 ${displayName}`;
+    } else if (source.doc_type === 'transcript') {
+      return `🗣️ ${displayName}`;
+    } else if (source.doc_type === 'calendar_event') {
+      return `📅 ${displayName}`;
     }
-    // For other RAG sources, use the source name or a friendly description
-    return source.source || 'Community documents';
+    
+    // No doc_type available, just return the source name
+    return displayName;
   }
   return 'Community data';
 }
