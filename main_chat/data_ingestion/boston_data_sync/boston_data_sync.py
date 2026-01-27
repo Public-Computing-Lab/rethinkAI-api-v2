@@ -26,6 +26,28 @@ sys.path.insert(0, str(_PROJECT_ROOT))
 
 import config
 
+# Check pandas version for datetime parsing compatibility
+_PANDAS_VERSION = tuple(int(x) for x in pd.__version__.split(".")[:2])
+_USE_MIXED_FORMAT = _PANDAS_VERSION >= (2, 0)
+
+
+def parse_datetime_column(series: pd.Series) -> pd.Series:
+    """
+    Parse a series to datetime with consistent format handling.
+
+    Works with both pandas 1.x and 2.x versions.
+    """
+    if _USE_MIXED_FORMAT:
+        return pd.to_datetime(series, format="mixed", errors="coerce")
+    else:
+        # For pandas < 2.0, suppress the warning and use default behavior
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="Could not infer format")
+            return pd.to_datetime(series, errors="coerce")
+
+
 # Default MySQL connection settings (can be overridden by environment variables)
 MYSQL_CONFIG = {
     "host": config.MYSQL_HOST,
@@ -219,8 +241,8 @@ class BostonDataSyncer:
             # Normalize date_field name
             date_col = date_field.replace(" ", "_").replace("-", "_").lower()
             if date_col in df.columns:
-                # Convert to datetime
-                df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
+                # Convert to datetime using helper function
+                df[date_col] = parse_datetime_column(df[date_col])
 
                 # Handle timezone-aware columns: convert to timezone-naive for comparison
                 if pd.api.types.is_datetime64_any_dtype(df[date_col]):
@@ -386,9 +408,9 @@ class BostonDataSyncer:
             # Note: Date filtering is already done in fetch_all_records, so we just need to ensure
             # the data is ready for database insertion (timezone-naive)
             if date_field_normalized and len(df) > 0 and date_field_normalized in df.columns:
-                # Convert to datetime if not already
+                # Convert to datetime if not already, using helper function
                 if not pd.api.types.is_datetime64_any_dtype(df[date_field_normalized]):
-                    df[date_field_normalized] = pd.to_datetime(df[date_field_normalized], errors="coerce")
+                    df[date_field_normalized] = parse_datetime_column(df[date_field_normalized])
 
                 # Handle timezone-aware columns: convert datetime64[ns, UTC] to timezone-naive
                 # This is critical for MySQL compatibility and to avoid comparison errors
@@ -430,11 +452,11 @@ class BostonDataSyncer:
                 df.rename(columns=normalized_mapping, inplace=True)
                 print("   ✅ Field mapping applied")
 
-                # Convert mapped datetime columns
+                # Convert mapped datetime columns using helper function
                 for new_col_name in normalized_mapping.values():
                     if new_col_name in df.columns and ("date" in new_col_name.lower() or "time" in new_col_name.lower() or "_dt" in new_col_name.lower()):
                         print(f"   📅 Converting {new_col_name} to datetime")
-                        df[new_col_name] = pd.to_datetime(df[new_col_name], errors="coerce")
+                        df[new_col_name] = parse_datetime_column(df[new_col_name])
                         if pd.api.types.is_datetime64_any_dtype(df[new_col_name]):
                             if df[new_col_name].dt.tz is not None:
                                 df[new_col_name] = df[new_col_name].dt.tz_localize(None)
@@ -468,10 +490,10 @@ class BostonDataSyncer:
                         print(f"   ❌ Could not add primary key: {e}")
 
             # Prepare data for insertion
-            # Convert date columns and strip timezone if present
+            # Convert date columns and strip timezone if present, using helper function
             for col in df.columns:
                 if "date" in col.lower() or "time" in col.lower():
-                    df[col] = pd.to_datetime(df[col], errors="coerce")
+                    df[col] = parse_datetime_column(df[col])
                     # Strip timezone if present (MySQL doesn't support timezone-aware datetimes)
                     if pd.api.types.is_datetime64_any_dtype(df[col]):
                         if df[col].dt.tz is not None:
