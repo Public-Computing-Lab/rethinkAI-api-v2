@@ -4,9 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>On The Porch</title>
+  <!-- Version 0.2.1 -->
   
   <!-- Favicon -->
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏘️</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏡</text></svg>">
   
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -16,6 +17,18 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <!-- Mobile Tab Switcher (only visible on portrait mobile) -->
+  <div class="mobile-tabs" id="mobile-tabs">
+    <button class="mobile-tab active" data-view="events" id="tab-events">
+      <span class="tab-icon">📅</span>
+      <span class="tab-label">Events</span>
+    </button>
+    <button class="mobile-tab" data-view="chat" id="tab-chat">
+      <span class="tab-icon">💬</span>
+      <span class="tab-label">Chat</span>
+    </button>
+  </div>
+
   <!-- Main App Container -->
   <div class="app-container">
     <!-- Sidebar (Events Panel) -->
@@ -61,12 +74,12 @@
     </aside>
     
     <!-- Main Chat Area -->
-    <main class="chat-container">
+    <main class="chat-container" id="chat-container">
       <!-- Top Bar -->
       <header class="chat-header">
         <div class="header-left">
           <div class="logo">
-            <div class="logo-icon">🏘️</div>
+            <div class="logo-icon">🏡</div>
             <div class="logo-text">
               <h1>On The Porch</h1>
               <p>Dorchester Decoded</p>
@@ -93,7 +106,7 @@
               <ul>
                 <li>📅 Upcoming community events and activities</li>
                 <li>📊 311 service requests and neighborhood data</li>
-                <li>🏘️ Local policies and planning information</li>
+                <li>🏡 Local policies and planning information</li>
                 <li>🗺️ Place-based questions about specific areas</li>
               </ul>
               <p>What would you like to know about your community?</p>
@@ -141,5 +154,34 @@
   
   <script src="config.js"></script>
   <script src="app.js"></script>
+  <script>
+    // Mobile tab switching logic
+    (function() {
+      const tabEvents = document.getElementById('tab-events');
+      const tabChat = document.getElementById('tab-chat');
+      const sidebar = document.getElementById('sidebar');
+      const chatContainer = document.getElementById('chat-container');
+      
+      function switchView(view) {
+        if (view === 'events') {
+          tabEvents.classList.add('active');
+          tabChat.classList.remove('active');
+          sidebar.classList.remove('mobile-hidden');
+          chatContainer.classList.add('mobile-hidden');
+        } else {
+          tabChat.classList.add('active');
+          tabEvents.classList.remove('active');
+          chatContainer.classList.remove('mobile-hidden');
+          sidebar.classList.add('mobile-hidden');
+        }
+      }
+      
+      tabEvents.addEventListener('click', () => switchView('events'));
+      tabChat.addEventListener('click', () => switchView('chat'));
+      
+      // Expose switchView globally so app.js can call it
+      window.switchMobileView = switchView;
+    })();
+  </script>
 </body>
 </html>
