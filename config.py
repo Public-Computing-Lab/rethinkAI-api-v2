@@ -253,19 +253,11 @@ IMAP_PORT = int(os.getenv("IMAP_PORT", "993"))
 # ============================================================================
 # File Paths Configuration
 # ============================================================================
-_VECTORDB_DIR_RAW = os.getenv("VECTORDB_DIR", "vectordb_new")
-if Path(_VECTORDB_DIR_RAW).is_absolute():
-    VECTORDB_DIR = Path(_VECTORDB_DIR_RAW)
-else:
-    VECTORDB_DIR = (PROJECT_ROOT / _VECTORDB_DIR_RAW).resolve()
-
-_TEMP_DIR_RAW = os.getenv("TEMP_DOWNLOAD_DIR", "main_chat/data_ingestion/temp_downloads")
-if Path(_TEMP_DIR_RAW).is_absolute():
-    TEMP_DOWNLOAD_DIR = Path(_TEMP_DIR_RAW)
-else:
-    TEMP_DOWNLOAD_DIR = (PROJECT_ROOT / _TEMP_DIR_RAW).resolve()
-
-TEMP_DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+VECTORDB_DIR = Path(os.getenv("VECTORDB_DIR", "vectordb"))
+TEMP_DOWNLOAD_DIR = Path(os.getenv("TEMP_DOWNLOAD_DIR", "temp_downloads"))
+INGESTION_POLICY_DIR = Path(os.getenv("INGESTION_POLICY_DIR", "data/policies"))
+INGESTION_TRANSCRIPT_DIR = Path(os.getenv("INGESTION_TRANSCRIPT_DIR", "data/transcripts"))
+INGESTION_NEWSLETTER_DIR = Path(os.getenv("INGESTION_NEWSLETTER_DIR", "data/newsletters"))
 
 # ============================================================================
 # Processing Configuration
@@ -277,9 +269,9 @@ VERBOSE_LOGGING = os.getenv("VERBOSE_LOGGING", "false").lower() in ("true", "1",
 # ============================================================================
 # Sync State Files
 # ============================================================================
-SYNC_STATE_FILE = DATA_INGESTION_DIR / ".sync_state.json"
-EMAIL_SYNC_STATE_FILE = DATA_INGESTION_DIR / ".email_sync_state.json"
-
+SYNC_STATE_FILE = TEMP_DOWNLOAD_DIR / ".sync_state_gdrive.json"
+EMAIL_SYNC_STATE_FILE = TEMP_DOWNLOAD_DIR / ".sync_state_gmail.json"
+DOTNEWS_SYNC_STATE_FILENAME = TEMP_DOWNLOAD_DIR / ".sync_state_dotnews.json"
 # ============================================================================
 # Supported File Extensions
 # ============================================================================
@@ -292,6 +284,9 @@ SUPPORTED_EXTENSIONS = {".pdf", ".doc", ".docx", ".txt", ".md"}
 # ============================================================================
 BOSTON_CKAN_API = os.getenv("BOSTON_CKAN_API", "https://data.boston.gov/api/3/action")
 DOTNEWS_URL = os.getenv("DOTNEWS_URL", "https://www.dotnews.com/inprint/")
+
+DOTNEWS_BASE_URL = os.getenv("DOTNEWS_BASE_URL", "https://www.dotnews.com")
+DOTNEWS_WP_UPLOADS_PATH = os.getenv("DOTNEWS_WP_UPLOADS_PATH", "/wp-content/uploads")
 
 
 # ============================================================================

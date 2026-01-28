@@ -33,12 +33,7 @@ from google_drive_to_vectordb import process_newsletter_pdf, insert_events_to_db
 # if str(config.RAG_ROUTE_DIR) not in sys.path:
 # sys.path.insert(0, str(config.RAG_ROUTE_DIR))
 
-# Placeholder directories where future ingestion steps will drop files
-INGESTION_POLICY_DIR = config.TEMP_DOWNLOAD_DIR / "policy_docs"
-INGESTION_TRANSCRIPT_DIR = config.TEMP_DOWNLOAD_DIR / "transcripts"
-INGESTION_NEWSLETTER_DIR = config.TEMP_DOWNLOAD_DIR / "newsletters"
-
-for _d in (INGESTION_POLICY_DIR, INGESTION_TRANSCRIPT_DIR, INGESTION_NEWSLETTER_DIR):
+for _d in (config.INGESTION_POLICY_DIR, config.INGESTION_TRANSCRIPT_DIR, config.INGESTION_NEWSLETTER_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 
 

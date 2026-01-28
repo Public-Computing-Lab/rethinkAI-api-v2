@@ -138,7 +138,7 @@ def list_new_files_from_drive(service, folder_id: str, processed_files: dict) ->
 def download_file(service, file_id: str, file_name: str) -> Path:
     """Download a file from Google Drive to temp directory."""
     request = service.files().get_media(fileId=file_id)
-    local_path = config.TEMP_DOWNLOAD_DIR / file_name
+    local_path = Path(config.TEMP_DOWNLOAD_DIR) / file_name
 
     try:
         with io.FileIO(local_path, "wb") as fh:
