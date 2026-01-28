@@ -7,7 +7,7 @@
 GEMINI_API_KEY=
 GEMINI_MODEL=gemini-2.5-flash-lite
 # Embedding model for vector search (RAG)
-GEMINI_EMBED_MODEL=text-embedding-004
+GEMINI_EMBED_MODEL=gemini-embedding-001
 
 # ============================================================================
 # API / Flask / WebApp configuration
