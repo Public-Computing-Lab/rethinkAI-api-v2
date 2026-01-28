@@ -30,6 +30,14 @@ from utils.email_parser import extract_text_from_email, extract_pdf_attachments,
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 
 
+class AuthenticationRequiredError(Exception):
+    """Raised when user interaction is needed for OAuth."""
+
+    def __init__(self, auth_url: str):
+        self.auth_url = auth_url
+        super().__init__(f"Authentication required. Visit: {auth_url}")
+
+
 def load_email_sync_state() -> dict:
     """Load state of which emails have been processed."""
     if config.EMAIL_SYNC_STATE_FILE.exists():
@@ -46,8 +54,22 @@ def save_email_sync_state(state: dict) -> None:
     config.EMAIL_SYNC_STATE_FILE.write_text(json.dumps(state, indent=2))
 
 
-def get_gmail_credentials() -> Credentials:
-    """Get or refresh Gmail OAuth 2.0 credentials."""
+def get_gmail_credentials(interactive: bool = True) -> Credentials:
+    """
+    Get or refresh Gmail OAuth 2.0 credentials.
+
+    Args:
+        interactive: If True, opens browser for OAuth if needed.
+                    If False, raises AuthenticationRequiredError instead.
+                    Set to False for cron/automated runs.
+
+    Returns:
+        Valid Credentials object
+
+    Raises:
+        AuthenticationRequiredError: When interactive=False and user auth is needed
+        FileNotFoundError: When OAuth credentials file is missing
+    """
     creds = None
     token_path = Path(config.GMAIL_TOKEN_PATH)
 
@@ -55,49 +77,73 @@ def get_gmail_credentials() -> Credentials:
     if token_path.exists():
         try:
             creds = Credentials.from_authorized_user_file(str(token_path), SCOPES)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"  ⚠ Could not load existing token: {e}")
 
-    # If no valid credentials, go through OAuth flow
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            # Refresh the token
-            try:
-                creds.refresh(Request())
-            except Exception:
-                # If refresh fails, re-authenticate
-                creds = None
+    # If valid credentials exist, return them
+    if creds and creds.valid:
+        return creds
 
-        if not creds:
-            # Run OAuth flow (opens browser for user to authorize)
-            credentials_path = Path(config.GMAIL_CREDENTIALS_PATH)
-            if not credentials_path.exists():
-                raise FileNotFoundError(f"Gmail OAuth credentials not found: {config.GMAIL_CREDENTIALS_PATH}\n" "Please download credentials from Google Cloud Console.")
+    # Try to refresh expired credentials
+    if creds and creds.expired and creds.refresh_token:
+        try:
+            creds.refresh(Request())
+            token_path.write_text(creds.to_json())
+            print("  ✓ Token refreshed successfully")
+            return creds
+        except Exception as e:
+            print(f"  ⚠ Token refresh failed: {e}")
+            creds = None
 
-            flow = InstalledAppFlow.from_client_secrets_file(str(credentials_path), SCOPES)
-            # Use fixed port 8080 so redirect URI is predictable
-            creds = flow.run_local_server(port=8080)
+    # No valid credentials - need user interaction
+    credentials_path = Path(config.GMAIL_CREDENTIALS_PATH)
+    if not credentials_path.exists():
+        raise FileNotFoundError(f"Gmail OAuth credentials not found: {config.GMAIL_CREDENTIALS_PATH}\n" "Please download credentials from Google Cloud Console.")
 
-        # Save the credentials for next run
-        token_path.write_text(creds.to_json())
+    flow = InstalledAppFlow.from_client_secrets_file(str(credentials_path), SCOPES)
 
+    if not interactive:
+        # Non-interactive mode: generate URL and raise error
+        flow.redirect_uri = "http://localhost:8080/"
+        auth_url, _ = flow.authorization_url(access_type="offline", prompt="consent")  # Request refresh token  # Force consent to ensure refresh token
+        raise AuthenticationRequiredError(auth_url)
+
+    # Interactive mode: open browser for user to authorize
+    print("  Opening browser for Gmail authorization...")
+    creds = flow.run_local_server(port=8080, access_type="offline", prompt="consent")
+    token_path.write_text(creds.to_json())
+    print("  ✓ Authorization complete, token saved")
     return creds
 
 
-def get_gmail_service():
-    """Get authenticated Gmail API service."""
+def get_gmail_service(interactive: bool = True):
+    """
+    Get authenticated Gmail API service.
+
+    Args:
+        interactive: If True, allows browser-based OAuth if needed.
+                    If False, raises AuthenticationRequiredError instead.
+
+    Returns:
+        Gmail API service object
+
+    Raises:
+        AuthenticationRequiredError: When interactive=False and user auth is needed
+        ValueError: When EMAIL_ADDRESS is not configured
+        RuntimeError: When connection to Gmail API fails
+    """
     if not config.EMAIL_ADDRESS:
         raise ValueError("NEWSLETTER_EMAIL_ADDRESS not configured")
 
-    try:
-        # Get OAuth credentials
-        creds = get_gmail_credentials()
+    # Get OAuth credentials (may raise AuthenticationRequiredError)
+    creds = get_gmail_credentials(interactive=interactive)
 
-        # Build Gmail API service
+    # Build Gmail API service
+    try:
         service = build("gmail", "v1", credentials=creds)
         return service
     except Exception as e:
-        raise RuntimeError(f"Failed to connect to Gmail API: {e}")
+        raise RuntimeError(f"Failed to build Gmail API service: {e}")
 
 
 def get_recent_newsletters(service, processed_ids: List[str], days_back: int = 7) -> List[tuple]:
@@ -148,9 +194,8 @@ def extract_events_with_llm(text: str, source: str, publication_date: str = None
     Args:
         text: Newsletter text content
         source: Source identifier
-        publication_date: Newsletter publication date in YYYY-MM-DD format (used to infer exact dates from day names)
+        publication_date: Newsletter publication date in YYYY-MM-DD format
     """
-
     # Truncate very long text to avoid token limits
     max_chars = 15000
     if len(text) > max_chars:
@@ -160,8 +205,6 @@ def extract_events_with_llm(text: str, source: str, publication_date: str = None
     date_context = ""
     if publication_date:
         try:
-            from datetime import datetime
-
             pub_dt = datetime.strptime(publication_date, "%Y-%m-%d")
             date_context = f"""
 IMPORTANT DATE CONTEXT:
@@ -237,7 +280,6 @@ Text:
         if not isinstance(events, list):
             return []
 
-        # Add source to each event
         for event in events:
             event["source"] = source
 
@@ -258,7 +300,6 @@ def insert_events_to_db(events: List[Dict]) -> int:
 
     try:
         with conn.cursor() as cur:
-            # Ensure weekly_events table exists
             cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS weekly_events (
@@ -294,7 +335,17 @@ def insert_events_to_db(events: List[Dict]) -> int:
                         )
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                         """,
-                        (event.get("source", "email_newsletter"), None, event.get("event_name", ""), event.get("event_date", ""), event.get("start_date"), event.get("end_date"), event.get("start_time"), event.get("end_time"), event.get("raw_text", "")),  # page_number not applicable for emails
+                        (
+                            event.get("source", "email_newsletter"),
+                            None,
+                            event.get("event_name", ""),
+                            event.get("event_date", ""),
+                            event.get("start_date"),
+                            event.get("end_date"),
+                            event.get("start_time"),
+                            event.get("end_time"),
+                            event.get("raw_text", ""),
+                        ),
                     )
                     inserted_count += 1
                 except Exception as e:
@@ -308,16 +359,29 @@ def insert_events_to_db(events: List[Dict]) -> int:
     return inserted_count
 
 
-def sync_email_newsletters_to_sql() -> dict:
+def sync_email_newsletters_to_sql(interactive: bool = True) -> dict:
     """
     Main function to sync email newsletters to calendar SQL database.
-    Returns summary statistics.
+
+    Args:
+        interactive: If True, allows browser-based OAuth if needed.
+                    If False, returns error in stats instead of blocking.
+
+    Returns:
+        Dictionary with summary statistics
     """
     print("=" * 80)
     print("Starting Email Newsletter → Calendar SQL Sync")
     print("=" * 80)
 
-    stats = {"emails_processed": 0, "events_extracted": 0, "events_inserted": 0, "errors": []}
+    stats = {
+        "emails_processed": 0,
+        "events_extracted": 0,
+        "events_inserted": 0,
+        "errors": [],
+        "auth_required": False,
+        "auth_url": None,
+    }
 
     try:
         # Validate configuration
@@ -335,7 +399,17 @@ def sync_email_newsletters_to_sql() -> dict:
 
         # Connect to Gmail API
         print("Connecting to Gmail API...")
-        service = get_gmail_service()
+        try:
+            service = get_gmail_service(interactive=interactive)
+        except AuthenticationRequiredError as e:
+            # Non-interactive mode and auth needed
+            stats["auth_required"] = True
+            stats["auth_url"] = e.auth_url
+            error_msg = f"Gmail authentication required. Visit: {e.auth_url}"
+            print(f"⚠ {error_msg}")
+            stats["errors"].append(error_msg)
+            return stats
+
         print("✓ Connected successfully")
 
         # Get recent newsletters
@@ -353,11 +427,9 @@ def sync_email_newsletters_to_sql() -> dict:
         # Process each newsletter
         for i, (email_id, msg) in enumerate(newsletters, 1):
             try:
-                # Get subject and date
                 subject = get_email_subject(msg)
                 email_date = get_email_date(msg)
 
-                # Try to parse publication date
                 from email.utils import parsedate_to_datetime
 
                 try:
@@ -367,13 +439,9 @@ def sync_email_newsletters_to_sql() -> dict:
 
                 print(f"\n[{i}/{len(newsletters)}] Processing: {subject[:60]}...")
 
-                # Extract text from email body
                 email_text = extract_text_from_email(msg)
-
-                # Extract text from PDF attachments
                 pdf_texts = extract_pdf_attachments(msg)
 
-                # Combine all text
                 full_text = email_text
                 if pdf_texts:
                     full_text += "\n\n" + "\n\n".join(pdf_texts)
@@ -383,7 +451,6 @@ def sync_email_newsletters_to_sql() -> dict:
                     print("  ⚠ No text content found")
                     continue
 
-                # Extract events using LLM (pass publication date for date inference)
                 events = extract_events_with_llm(full_text, source=f"Email: {subject}", publication_date=pub_date)
 
                 if events:
@@ -392,7 +459,6 @@ def sync_email_newsletters_to_sql() -> dict:
                 else:
                     print("  ⚠ No events found")
 
-                # Mark as processed
                 processed_ids.append(email_id)
                 stats["emails_processed"] += 1
                 stats["events_extracted"] += len(events)
@@ -402,18 +468,15 @@ def sync_email_newsletters_to_sql() -> dict:
                 print(f"  ✗ {error_msg}")
                 stats["errors"].append(error_msg)
 
-        # Insert all events to database (SQL only - no vector DB for events)
         if all_events:
             print(f"\nInserting {len(all_events)} events into database...")
             inserted = insert_events_to_db(all_events)
             stats["events_inserted"] = inserted
             print(f"✓ Inserted {inserted} events successfully")
 
-        # Save updated sync state (keep last 1000 IDs to prevent file from growing too large)
         state["processed_email_ids"] = processed_ids[-1000:]
         save_email_sync_state(state)
         print("✓ Sync state saved")
-        print("✓ Gmail API session completed")
 
     except Exception as e:
         error_msg = f"Fatal error during sync: {str(e)}"
@@ -432,11 +495,31 @@ def sync_email_newsletters_to_sql() -> dict:
 
 
 if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Sync email newsletters to calendar database")
+    parser.add_argument("--auth", action="store_true", help="Run interactive OAuth flow to authenticate with Gmail")
+    parser.add_argument("--non-interactive", action="store_true", help="Run in non-interactive mode (for cron jobs)")
+    args = parser.parse_args()
+
     try:
-        sync_email_newsletters_to_sql()
+        if args.auth:
+            # Just do authentication
+            print("Running Gmail OAuth authentication...")
+            get_gmail_credentials(interactive=True)
+            print("✓ Authentication successful! Token saved.")
+        else:
+            # Run full sync
+            interactive = not args.non_interactive
+            sync_email_newsletters_to_sql(interactive=interactive)
     except KeyboardInterrupt:
         print("\n\nInterrupted by user. Exiting...")
         sys.exit(1)
+    except AuthenticationRequiredError as e:
+        print(f"\n⚠ Authentication required!")
+        print(f"Visit this URL to authorize: {e.auth_url}")
+        print("\nOr run: python email_to_calendar_sql.py --auth")
+        sys.exit(2)
     except Exception as e:
         print(f"\n\nFatal error: {e}")
         sys.exit(1)

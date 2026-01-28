@@ -11,7 +11,8 @@ import json
 
 # Import ingestion modules
 from google_drive_to_vectordb import sync_google_drive_to_vectordb
-from email_to_calendar_sql import sync_email_newsletters_to_sql
+from email_to_calendar_sql import sync_email_newsletters_to_sql, AuthenticationRequiredError
+
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_PROJECT_ROOT))
@@ -259,13 +260,37 @@ def main():
     print("►" * 40)
 
     try:
-        email_stats = sync_email_newsletters_to_sql()
+        # Run in non-interactive mode for cron jobs
+        email_stats = sync_email_newsletters_to_sql(interactive=False)
+
+        # Check if auth was required (special handling for cron)
+        if email_stats.get("auth_required"):
+            print("\n" + "!" * 60)
+            print("! GMAIL AUTHENTICATION REQUIRED")
+            print("!" * 60)
+            print("! Visit this URL to authorize:")
+            print(f"! {email_stats.get('auth_url')}")
+            print("!")
+            print("! Or run manually:")
+            print("!   python email_to_calendar_sql.py --auth")
+            print("!" * 60 + "\n")
+
+    except AuthenticationRequiredError as e:
+        # Fallback catch (shouldn't hit this with interactive=False, but just in case)
+        print("\n⚠ Gmail authentication required!")
+        print(f"  Visit: {e.auth_url}")
+        print("  Or run: python email_to_calendar_sql.py --auth")
+        email_stats = {
+            "emails_processed": 0,
+            "events_extracted": 0,
+            "events_inserted": 0,
+            "errors": [f"Authentication required: {e.auth_url}"],
+            "auth_required": True,
+            "auth_url": e.auth_url,
+        }
     except Exception as e:
         print(f"\n✗ FATAL: Email sync failed: {e}")
-        email_stats = {"emails_processed": 0, "events_extracted": 0, "events_inserted": 0, "articles_extracted": 0, "articles_added": 0, "errors": [str(e)]}
-
-    # Separator
-    print("\n" + "-" * 80 + "\n")
+        email_stats = {"emails_processed": 0, "events_extracted": 0, "events_inserted": 0, "errors": [str(e)]}
 
     # Run Boston Open Data sync
     print("►" * 40)

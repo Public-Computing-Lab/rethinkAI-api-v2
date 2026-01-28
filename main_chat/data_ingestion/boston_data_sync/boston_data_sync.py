@@ -301,7 +301,11 @@ class BostonDataSyncer:
             else:
                 # String type - estimate length
                 max_len = df[col].astype(str).str.len().max()
-                varchar_len = min(max(max_len * 2, 255), 65535)  # Reasonable max
+                # Handle NaN (empty columns) - default to 255
+                if pd.isna(max_len) or max_len == 0:
+                    varchar_len = 255
+                else:
+                    varchar_len = min(max(int(max_len) * 2, 255), 65535)  # Reasonable max
                 col_def = f"`{col_clean}` VARCHAR({varchar_len})"
 
             columns.append(col_def)
