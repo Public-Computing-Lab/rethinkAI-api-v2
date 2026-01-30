@@ -23,7 +23,7 @@ import config
 from boston_data_sync.boston_data_sync import BostonDataSyncer
 
 # Import dotnews downloader
-from dotnews_downloader import download_latest_pdf
+from dotnews_downloader import download_pdfs
 
 # Import newsletter processing function
 from google_drive_to_vectordb import process_newsletter_pdf, insert_events_to_db
@@ -50,7 +50,7 @@ def sync_dotnews_newsletters() -> dict:
         dotnews_dir.mkdir(parents=True, exist_ok=True)
 
         # Track processed files to avoid re-processing
-        processed_file = dotnews_dir / ".processed_dotnews.json"
+        processed_file = config.DOTNEWS_SYNC_STATE_FILENAME
         processed_files = {}
         if processed_file.exists():
             try:
@@ -60,7 +60,7 @@ def sync_dotnews_newsletters() -> dict:
 
         # Download latest PDF
         print("  📥 Downloading latest newsletter from dotnews.com...")
-        pdf_path = download_latest_pdf(output_dir=dotnews_dir)
+        pdf_path = download_pdfs(output_dir=dotnews_dir)
 
         if not pdf_path:
             print("  ⚠ No PDF downloaded (may already be latest or download failed)")
