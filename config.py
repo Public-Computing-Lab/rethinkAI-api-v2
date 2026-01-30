@@ -14,7 +14,7 @@ SQL_ROUTE_DIR = MAIN_CHAT_DIR / "sql_pipeline"
 API_DIR = PROJECT_ROOT / "api"
 
 # Load .env from project root
-_ENV_FILE = PROJECT_ROOT / ".env"
+_ENV_FILE = PROJECT_ROOT / ".env-local"
 if _ENV_FILE.exists():
     load_dotenv(_ENV_FILE)
 
@@ -35,13 +35,16 @@ SESSION_COOKIE_SECURE = os.getenv("FLASK_SESSION_COOKIE_SECURE", "False").lower(
 # ============================================================================
 # MySQL Configuration
 # ============================================================================
-
 MYSQL_HOST = os.getenv("MYSQL_HOST", "")
 MYSQL_PORT = os.getenv("MYSQL_PORT", "3306")
 MYSQL_USER = os.getenv("MYSQL_USER", "")
 MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "")
 MYSQL_DB = os.getenv("MYSQL_DB", "rethink_ai_boston")
-MYSQL_MAX_RETRIES = 3
+MYSQL_MAX_RETRIES = os.getenv("MYSQL_MAX_RETRIES", "3")
+
+# Connection pooling settings (for future optimization)
+MYSQL_POOL_SIZE = int(os.getenv("MYSQL_POOL_SIZE", "5"))
+MYSQL_POOL_RECYCLE = int(os.getenv("MYSQL_POOL_RECYCLE", "3600"))
 
 METADATA_CATALOG_PATH = os.getenv("METADATA_CATALOG_PATH", "")
 METADATA_DIR = os.getenv("METADATA_DIR", "")
@@ -84,7 +87,7 @@ def get_genai_client():
         _genai_client = genai.Client(api_key=GEMINI_API_KEY)
         return _genai_client
     except ImportError:
-        raise RuntimeError("google-genai package not installed. " "Run: pip install google-genai")
+        raise RuntimeError("google-genai package not installed. Run: pip install google-genai")
 
 
 def generate_content(
@@ -251,13 +254,16 @@ IMAP_SERVER = os.getenv("IMAP_SERVER", "imap.gmail.com")
 IMAP_PORT = int(os.getenv("IMAP_PORT", "993"))
 
 # ============================================================================
-# File Paths Configuration
+# File Paths Configuration (FIXED - all as Path objects)
 # ============================================================================
-VECTORDB_DIR = Path(os.getenv("VECTORDB_DIR", "vectordb"))
-TEMP_DOWNLOAD_DIR = Path(os.getenv("TEMP_DOWNLOAD_DIR", "temp_downloads"))
+VECTORDB_DIR = Path(os.getenv("VECTORDB_DIR", "vectordb_new"))
+TEMP_DOWNLOAD_DIR = Path(os.getenv("TEMP_DOWNLOAD_DIR", "main_chat/data_ingestion/temp_downloads"))
 INGESTION_POLICY_DIR = Path(os.getenv("INGESTION_POLICY_DIR", "data/policies"))
 INGESTION_TRANSCRIPT_DIR = Path(os.getenv("INGESTION_TRANSCRIPT_DIR", "data/transcripts"))
 INGESTION_NEWSLETTER_DIR = Path(os.getenv("INGESTION_NEWSLETTER_DIR", "data/newsletters"))
+
+# Ensure temp download dir exists
+TEMP_DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 # ============================================================================
 # Processing Configuration
@@ -266,21 +272,25 @@ EMAIL_LOOKBACK_DAYS = int(os.getenv("EMAIL_LOOKBACK_DAYS", "7"))
 MAX_FILES_PER_RUN = int(os.getenv("MAX_FILES_PER_RUN", "100"))
 VERBOSE_LOGGING = os.getenv("VERBOSE_LOGGING", "false").lower() in ("true", "1", "yes")
 
+# LLM processing settings
+LLM_MAX_WORKERS = int(os.getenv("LLM_MAX_WORKERS", "3"))  # For concurrent page processing
+
 # ============================================================================
-# Sync State Files
+# Sync State Files (FIXED - as Path objects, built from TEMP_DOWNLOAD_DIR)
 # ============================================================================
 SYNC_STATE_FILE = TEMP_DOWNLOAD_DIR / ".sync_state_gdrive.json"
 EMAIL_SYNC_STATE_FILE = TEMP_DOWNLOAD_DIR / ".sync_state_gmail.json"
 DOTNEWS_SYNC_STATE_FILENAME = TEMP_DOWNLOAD_DIR / ".sync_state_dotnews.json"
+
 # ============================================================================
 # Supported File Extensions
 # ============================================================================
-SUPPORTED_EXTENSIONS = {".pdf", ".doc", ".docx", ".txt", ".md"}
+SUPPORTED_EXTENSIONS = frozenset({".pdf", ".doc", ".docx", ".txt", ".md"})
 
 # ============================================================================
 # Data URLs:
 # Boston 311 data portal
-# Dotnews (Dorchester Reporter
+# Dotnews (Dorchester Reporter)
 # ============================================================================
 BOSTON_CKAN_API = os.getenv("BOSTON_CKAN_API", "https://data.boston.gov/api/3/action")
 DOTNEWS_URL = os.getenv("DOTNEWS_URL", "https://www.dotnews.com/inprint/")
@@ -319,6 +329,8 @@ def print_config_summary():
     print(f"Gemini Embed Model: {GEMINI_EMBED_MODEL}")
     print(f"Vector DB Directory: {VECTORDB_DIR}")
     print(f"Temp Download Directory: {TEMP_DOWNLOAD_DIR}")
+    print(f"LLM Max Workers: {LLM_MAX_WORKERS}")
+    print(f"MySQL Pool Size: {MYSQL_POOL_SIZE}")
     print("=" * 80)
 
     errors = validate_config()
