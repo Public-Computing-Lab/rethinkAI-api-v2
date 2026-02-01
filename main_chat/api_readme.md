@@ -167,7 +167,7 @@ python api/api.py
 
 Output:
 ```
-✓ interaction_log table ready
+✔ interaction_log table ready
 
 🚀 Agent API v2.0
    Host: 127.0.0.1:8888
@@ -675,10 +675,10 @@ Sources: [...]
 ==================================================
 SUMMARY
 ==================================================
-Health: ✓ PASS
-Events: ✓ PASS
-Log POST: ✓ PASS
-Chat: ✓ PASS
+Health: ✔ PASS
+Events: ✔ PASS
+Log POST: ✔ PASS
+Chat: ✔ PASS
 ```
 
 ### Manual Testing with curl

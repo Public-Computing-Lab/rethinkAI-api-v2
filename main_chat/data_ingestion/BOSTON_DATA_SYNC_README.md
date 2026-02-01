@@ -4,12 +4,12 @@ This automation system syncs data from [data.boston.gov](https://data.boston.gov
 
 ## Features
 
-- ✅ **Automated syncing** from Boston's CKAN API
-- ✅ **Incremental updates** - only syncs new/changed records
-- ✅ **Multiple datasets** - configure and sync multiple datasets
-- ✅ **Automatic table creation** - creates MySQL tables with proper schema
-- ✅ **Error handling** - robust error handling and logging
-- ✅ **Scheduling support** - easy integration with cron/Task Scheduler
+- ✔ **Automated syncing** from Boston's CKAN API
+- ✔ **Incremental updates** - only syncs new/changed records
+- ✔ **Multiple datasets** - configure and sync multiple datasets
+- ✔ **Automatic table creation** - creates MySQL tables with proper schema
+- ✔ **Error handling** - robust error handling and logging
+- ✔ **Scheduling support** - easy integration with cron/Task Scheduler
 
 ## Quick Start
 
@@ -287,7 +287,7 @@ def main():
     try:
         with BostonDataSyncer() as syncer:
             boston_stats = syncer.sync_all()
-            print(f"✅ Boston data sync: {boston_stats['datasets_synced']} datasets")
+            print(f"✔ Boston data sync: {boston_stats['datasets_synced']} datasets")
     except Exception as e:
         print(f"✗ Boston data sync failed: {e}")
 ```

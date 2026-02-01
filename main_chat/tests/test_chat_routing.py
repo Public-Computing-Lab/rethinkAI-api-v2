@@ -50,19 +50,19 @@ def test_routing():
             has_policy_sources = plan.get("policy_sources") is not None
 
             if mode == "rag" and not has_policy_sources:
-                print("⚠️  RAG mode but NO policy sources specified!")
+                print("⚠  RAG mode but NO policy sources specified!")
             elif mode == "rag" and has_policy_sources:
-                print("✅ Will query policies")
+                print("✔ Will query policies")
             elif mode == "sql":
                 print("📊 SQL only - no policy retrieval")
             elif mode == "hybrid":
                 if has_policy_sources:
-                    print("✅ Hybrid with policies")
+                    print("✔ Hybrid with policies")
                 else:
-                    print("⚠️  Hybrid but NO policy sources!")
+                    print("⚠  Hybrid but NO policy sources!")
 
         except Exception as e:
-            print(f"❌ Error: {e}")
+            print(f"✗ Error: {e}")
 
 
 if __name__ == "__main__":

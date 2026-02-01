@@ -27,7 +27,7 @@ rethinkAI-api-v2/
 │   ├── rag_pipeline/             # RAG retrieval system
 │   ├── data_ingestion/           # Automated data sync (Google Drive, Email)
 │   ├── calendar/                 # Event extraction and processing
-│   └── new_metadata/             # Database schema metadata generation
+│   └── metadata/                 # Database schema metadata generation
 │
 ├── dataset-documentation/        # Dataset documentation (see below)
 ├── public/                       # Frontend webapp

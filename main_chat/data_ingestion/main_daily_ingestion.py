@@ -1,209 +1,185 @@
-"""
-Main Daily Ingestion Script
-Orchestrates Google Drive, Email, and Boston Open Data ingestion processes.
-Run this script once per day via cron job or task scheduler.
-"""
-
 import sys
 from pathlib import Path
 from datetime import datetime
 import json
-
-# Import ingestion modules
-from google_drive_to_vectordb import sync_google_drive_to_vectordb
-from email_to_calendar_sql import sync_email_newsletters_to_sql, AuthenticationRequiredError
-
+import argparse
+import concurrent.futures
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_PROJECT_ROOT))
 
 import config
 
-# Import Boston data sync
+# Import shared logging FIRST, before other modules
+from main_chat.data_ingestion.utils.log_util import set_verbosity, Verbosity, log, log_error, log_info, log_debug, log_success
+
+# Import ingestion modules (they will use log_util)
+from google_drive_to_vectordb import sync_google_drive_to_vectordb
+from email_to_calendar_sql import sync_email_newsletters_to_sql, AuthenticationRequiredError
 from boston_data_sync.boston_data_sync import BostonDataSyncer
-
-# Import dotnews downloader
-from dotnews_downloader import download_latest_pdf
-
-# Import newsletter processing function
+from dotnews_downloader import download_pdfs, SyncState as DotnewsSyncState
 from google_drive_to_vectordb import process_newsletter_pdf, insert_events_to_db
-
-# Temporary: import vectordb builder from rag stuff (will be moved into this package later)
-# Import directly from the rag stuff directory to avoid conflict with local build_vectordb.py
-# if str(config.RAG_ROUTE_DIR) not in sys.path:
-# sys.path.insert(0, str(config.RAG_ROUTE_DIR))
-
-# Placeholder directories where future ingestion steps will drop files
-INGESTION_POLICY_DIR = config.TEMP_DOWNLOAD_DIR / "policy_docs"
-INGESTION_TRANSCRIPT_DIR = config.TEMP_DOWNLOAD_DIR / "transcripts"
-INGESTION_NEWSLETTER_DIR = config.TEMP_DOWNLOAD_DIR / "newsletters"
-
-for _d in (INGESTION_POLICY_DIR, INGESTION_TRANSCRIPT_DIR, INGESTION_NEWSLETTER_DIR):
-    _d.mkdir(parents=True, exist_ok=True)
 
 
 def sync_dotnews_newsletters() -> dict:
-    """
-    Download and process the latest newsletter from dotnews.com.
-    Returns stats dict with processing results.
-    """
+    """Download and process the latest newsletter from dotnews.com."""
     stats = {"pdfs_downloaded": 0, "pdfs_processed": 0, "events_extracted": 0, "chunks_added": 0, "errors": []}
 
     try:
-        # Download directory
-        dotnews_dir = config.TEMP_DOWNLOAD_DIR / "dotnews"
+        dotnews_dir = config.DATA_DOWNLOAD_DIR / "dotnews"
         dotnews_dir.mkdir(parents=True, exist_ok=True)
 
-        # Track processed files to avoid re-processing
-        processed_file = dotnews_dir / ".processed_dotnews.json"
-        processed_files = {}
-        if processed_file.exists():
-            try:
-                processed_files = json.loads(processed_file.read_text())
-            except Exception:
-                processed_files = {}
+        # Download new PDFs (uses SyncState internally to skip already-downloaded)
+        log_debug("Downloading latest newsletters from dotnews.com...")
+        pdf_paths = download_pdfs(output_dir=dotnews_dir)
+        stats["pdfs_downloaded"] = len(pdf_paths)
 
-        # Download latest PDF
-        print("  📥 Downloading latest newsletter from dotnews.com...")
-        pdf_path = download_latest_pdf(output_dir=dotnews_dir)
+        # Load sync state to check what needs processing
+        sync_state_path = config.DOTNEWS_SYNC_STATE_FILENAME
+        sync_state = DotnewsSyncState.load(sync_state_path)
 
-        if not pdf_path:
-            print("  ⚠ No PDF downloaded (may already be latest or download failed)")
+        # Get all unprocessed files (includes newly downloaded + any previous failures)
+        unprocessed = sync_state.get_unprocessed_files()
+
+        if not unprocessed:
+            log_debug("  ⚠ No new PDFs to process")
             return stats
 
-        stats["pdfs_downloaded"] = 1
+        log_info(f"  Processing {len(unprocessed)} PDF(s)")
 
-        # Check if we've already processed this file
-        file_key = pdf_path.name
-        if file_key in processed_files:
-            print(f"  ✓ Already processed: {file_key}")
-            return stats
+        for original_filename, renamed_filename in unprocessed:
+            pdf_path = dotnews_dir / renamed_filename
 
-        # Process the newsletter PDF
-        print(f"  📰 Processing: {pdf_path.name}")
-        file_metadata = {"name": pdf_path.name, "id": f"dotnews_{pdf_path.name}", "modifiedTime": datetime.fromtimestamp(pdf_path.stat().st_mtime).isoformat() + "Z"}
+            if not pdf_path.exists():
+                log_debug(f"  ⚠ File not found: {renamed_filename}")
+                continue
 
-        result = process_newsletter_pdf(pdf_path, file_metadata)
+            log_debug(f"     Processing: {renamed_filename}")
+            file_metadata = {"name": renamed_filename, "id": f"dotnews_{renamed_filename}", "modifiedTime": datetime.fromtimestamp(pdf_path.stat().st_mtime).isoformat() + "Z"}
 
-        # Insert events into database
-        if result.get("events"):
-            events_inserted = insert_events_to_db(result["events"])
-            stats["events_extracted"] = len(result["events"])
-            print(f"  ✓ Inserted {events_inserted} events into database")
+            result = process_newsletter_pdf(pdf_path, file_metadata)
 
-        # Add documents to vector DB (will be handled in Phase 4)
-        stats["chunks_added"] = len(result.get("documents", []))
-        stats["pdfs_processed"] = 1
+            events_count = 0
+            if result.get("events"):
+                events_inserted = insert_events_to_db(result["events"])
+                events_count = len(result["events"])
+                stats["events_extracted"] += events_count
+                log_debug(f"  ✔ Inserted {events_inserted} events")
 
-        # Mark as processed
-        processed_files[file_key] = {"name": pdf_path.name, "processed_at": datetime.now().isoformat(), "chunks": len(result.get("documents", [])), "events": len(result.get("events", []))}
+            stats["chunks_added"] += len(result.get("documents", []))
+            stats["pdfs_processed"] += 1
 
-        # Save processed files list (keep only last 10 to avoid file growing)
-        if len(processed_files) > 10:
-            # Keep only the most recent 10
-            sorted_files = sorted(processed_files.items(), key=lambda x: x[1].get("processed_at", ""), reverse=True)
-            processed_files = dict(sorted_files[:10])
-
-        processed_file.write_text(json.dumps(processed_files, indent=2))
+            # Mark as processed in sync state
+            sync_state.mark_processed(original_filename, events_count)
+            sync_state.save(sync_state_path)
 
     except Exception as e:
         error_msg = f"Error syncing dotnews: {e}"
-        print(f"  ✗ {error_msg}")
+        log_error(error_msg)
         stats["errors"].append(error_msg)
 
     return stats
 
 
-def log_run_summary(drive_stats: dict, email_stats: dict, boston_stats: dict = None, dotnews_stats: dict = None) -> None:
-    """Log summary of the ingestion run to a JSONL file."""
-    log_file = Path(__file__).parent / "ingestion_log.jsonl"
+def safe_email_sync(interactive: bool = False) -> dict:
+    """Wrapper for email sync with proper error handling."""
+    try:
+        email_stats = sync_email_newsletters_to_sql(interactive=interactive)
+        if email_stats.get("auth_required"):
+            log_error("GMAIL AUTHENTICATION REQUIRED")
+            log_info(f"  Visit: {email_stats.get('auth_url')}")
+        return email_stats
+    except AuthenticationRequiredError as e:
+        log_error("Gmail authentication required!")
+        log_info(f"  Visit: {e.auth_url}")
+        return {"emails_processed": 0, "events_extracted": 0, "events_inserted": 0, "errors": [f"Authentication required: {e.auth_url}"], "auth_required": True, "auth_url": e.auth_url}
+    except Exception as e:
+        log_error(f"Email sync failed: {e}")
+        return {"emails_processed": 0, "events_extracted": 0, "events_inserted": 0, "errors": [str(e)]}
 
+
+def safe_boston_sync() -> dict:
+    """Wrapper for Boston data sync with proper error handling."""
+    try:
+        syncer = BostonDataSyncer()
+        return syncer.sync_all()
+    except Exception as e:
+        log_error(f"Boston data sync failed: {e}")
+        return {"datasets_synced": 0, "total_records": 0, "datasets": [{"dataset": "unknown", "errors": [str(e)]}]}
+
+
+def safe_drive_sync() -> dict:
+    """Wrapper for Google Drive sync with proper error handling."""
+    try:
+        return sync_google_drive_to_vectordb()
+    except Exception as e:
+        log_error(f"Google Drive sync failed: {e}")
+        return {"files_processed": 0, "chunks_added": 0, "errors": [str(e)]}
+
+
+def log_run_summary(drive_stats, email_stats, boston_stats=None, dotnews_stats=None):
+    """Log summary of the ingestion run to a JSONL file."""
+    log_file = _PROJECT_ROOT / "logs/ingestion_log.jsonl"
     summary = {
         "timestamp": datetime.now().isoformat(),
         "google_drive": drive_stats,
         "email_newsletters": email_stats,
     }
-
     if boston_stats:
         summary["boston_open_data"] = boston_stats
-
     if dotnews_stats:
         summary["dotnews"] = dotnews_stats
 
-    # Calculate overall success
-    errors = len(drive_stats.get("errors", [])) + len(email_stats.get("errors", [])) + (sum(len(d.get("errors", [])) for d in boston_stats.get("datasets", [])) if boston_stats else 0) + len(dotnews_stats.get("errors", [])) if dotnews_stats else 0
+    errors = len(drive_stats.get("errors", [])) + len(email_stats.get("errors", [])) + (sum(len(d.get("errors", [])) for d in boston_stats.get("datasets", [])) if boston_stats else 0) + (len(dotnews_stats.get("errors", [])) if dotnews_stats else 0)
     summary["success"] = errors == 0
 
-    # Append to log file (JSONL format - one JSON object per line)
     try:
         with open(log_file, "a", encoding="utf-8") as f:
             f.write(json.dumps(summary) + "\n")
-        print(f"\n📝 Run summary logged to {log_file}")
     except Exception as e:
-        print(f"\n⚠ Warning: Could not write to log file: {e}")
+        log_error(f"Could not write to log file: {e}")
 
 
-def print_banner(title: str) -> None:
-    """Print a formatted banner."""
+def print_banner(title: str):
     width = 80
-    print("\n" + "╔" + "=" * (width - 2) + "╗")
+    log_info("\n" + "╔" + "=" * (width - 2) + "╗")
     padding = (width - len(title) - 2) // 2
-    print("║" + " " * padding + title + " " * (width - padding - len(title) - 2) + "║")
-    print("╚" + "=" * (width - 2) + "╝\n")
+    log_info("║" + " " * padding + title + " " * (width - padding - len(title) - 2) + "║")
+    log_info("╚" + "=" * (width - 2) + "╝\n")
 
 
-def print_final_summary(drive_stats: dict, email_stats: dict, boston_stats: dict = None, dotnews_stats: dict = None) -> None:
-    """Print final summary of the ingestion run."""
+def print_final_summary(drive_stats, email_stats, boston_stats=None, dotnews_stats=None):
+    """Print final summary - always shown."""
     drive_errors = len(drive_stats.get("errors", []))
     email_errors = len(email_stats.get("errors", []))
     boston_errors = sum(len(d.get("errors", [])) for d in boston_stats.get("datasets", [])) if boston_stats else 0
-    total_errors = drive_errors + email_errors + boston_errors
+    dotnews_errors = len(dotnews_stats.get("errors", [])) if dotnews_stats else 0
+    total_errors = drive_errors + email_errors + boston_errors + dotnews_errors
 
-    print("\n╔" + "=" * 78 + "╗")
+    # Always show final summary (force=True equivalent via direct print)
+    print("\n" + "╔" + "=" * 78 + "╗")
     print("║" + " " * 30 + "FINAL SUMMARY" + " " * 35 + "║")
     print("╠" + "=" * 78 + "╣")
 
-    # Google Drive stats
-    files = drive_stats.get("files_processed", 0)
-    chunks = drive_stats.get("chunks_added", 0)
-    print(f"║ Google Drive Files Processed: {files:>5}                                      ║")
-    print(f"║ Vector DB Chunks Added:       {chunks:>5}                                      ║")
+    def stat_line(label, value):
+        return f"  »  {label:<40} {str(value):>6}"
 
-    # Email stats
-    emails = email_stats.get("emails_processed", 0)
-    events_sql = email_stats.get("events_inserted", 0)
-    print(f"║ Emails Processed:             {emails:>5}                                      ║")
-    print(f"║ Calendar Events (SQL):        {events_sql:>5}                                      ║")
-
-    # Boston Open Data stats
+    print(stat_line("Dotnews PDFs Processed:", dotnews_stats.get("pdfs_processed", 0) if dotnews_stats else 0))
+    print(stat_line("Dotnews Events Extracted:", dotnews_stats.get("events_extracted", 0) if dotnews_stats else 0))
+    print(stat_line("Google Drive Files Processed:", drive_stats.get("files_processed", 0)))
+    print(stat_line("Vector DB Chunks Added:", drive_stats.get("chunks_added", 0)))
+    print(stat_line("Emails Processed:", email_stats.get("emails_processed", 0)))
+    print(stat_line("Email Events (SQL):", email_stats.get("events_inserted", 0)))
     if boston_stats:
-        datasets = boston_stats.get("datasets_synced", 0)
-        records = boston_stats.get("total_records", 0)
-        duration = boston_stats.get("duration_seconds", 0)
-        print(f"║ Boston Datasets Synced:        {datasets:>5}                                      ║")
-        print(f"║ Boston Records Synced:         {records:>5}                                      ║")
-        if duration > 0:
-            print(f"║ Boston Sync Duration:           {duration:>5.1f}s                                    ║")
-
-    # Dotnews stats
-    if dotnews_stats:
-        pdfs = dotnews_stats.get("pdfs_processed", 0)
-        events = dotnews_stats.get("events_extracted", 0)
-        chunks = dotnews_stats.get("chunks_added", 0)
-        print(f"║ Dotnews PDFs Processed:        {pdfs:>5}                                      ║")
-        print(f"║ Dotnews Events Extracted:      {events:>5}                                      ║")
-        print(f"║ Dotnews Chunks Added:          {chunks:>5}                                      ║")
-
-    # Total errors
-    print(f"║ Total Errors:                 {total_errors:>5}                                      ║")
-
+        print(stat_line("Boston Datasets Synced:", boston_stats.get("datasets_synced", 0)))
+        print(stat_line("Boston Records Synced:", boston_stats.get("total_records", 0)))
+    print(stat_line("Total Errors:", total_errors))
     print("╚" + "=" * 78 + "╝\n")
 
-    # Status message
     if total_errors == 0:
-        print("✅ Daily ingestion completed successfully!\n")
+        print("✔ Daily ingestion completed successfully!\n")
     else:
-        print(f"⚠️  Daily ingestion completed with {total_errors} error(s).\n")
+        print(f"⚠  Daily ingestion completed with {total_errors} error(s).\n")
         print("Error details:")
         for error in drive_stats.get("errors", []):
             print(f"  - [Google Drive] {error}")
@@ -212,127 +188,126 @@ def print_final_summary(drive_stats: dict, email_stats: dict, boston_stats: dict
         if boston_stats:
             for dataset in boston_stats.get("datasets", []):
                 for error in dataset.get("errors", []):
-                    print(f"  - [Boston Data: {dataset.get('dataset', 'unknown')}] {error}")
-        for error in dotnews_stats.get("errors", []) if dotnews_stats else []:
-            print(f"  - [Dotnews] {error}")
+                    print(f"  - [Boston: {dataset.get('dataset', 'unknown')}] {error}")
+        if dotnews_stats:
+            for error in dotnews_stats.get("errors", []):
+                print(f"  - [Dotnews] {error}")
         print()
 
 
-def main():
-    """Run daily data ingestion for all sources."""
-    print_banner(f"DAILY DATA INGESTION RUN - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+def run_sequential():
+    """Run all phases sequentially with full logging."""
+    log_info("\n" + "=" * 60)
+    log_info("▶ STARTING: Dotnews Newsletter Download & Processing")
+    log_info("=" * 60)
+    dotnews_stats = sync_dotnews_newsletters()
+    log_success(f"COMPLETED: Dotnews ({dotnews_stats.get('pdfs_processed', 0)} PDFs)")
 
-    # Print configuration summary if verbose
-    if config.VERBOSE_LOGGING:
-        config.print_config_summary()
+    log_info("\n" + "=" * 60)
+    log_info("▶ STARTING: Google Drive → Vector DB")
+    log_info("=" * 60)
+    drive_stats = safe_drive_sync()
+    log_success(f"COMPLETED: Google Drive ({drive_stats.get('files_processed', 0)} files)")
 
-    # Run Dotnews download and processing
-    print("\n" + "►" * 40)
-    print("► PHASE 0: Dotnews Newsletter Download & Processing")
-    print("►" * 40)
+    log_info("\n" + "=" * 60)
+    log_info("▶ STARTING: Email Newsletter → Calendar SQL")
+    log_info("=" * 60)
+    email_stats = safe_email_sync(interactive=False)
+    log_success(f"COMPLETED: Email ({email_stats.get('emails_processed', 0)} emails)")
 
-    try:
-        dotnews_stats = sync_dotnews_newsletters()
-    except Exception as e:
-        print(f"\n✗ FATAL: Dotnews sync failed: {e}")
-        dotnews_stats = {"pdfs_downloaded": 0, "pdfs_processed": 0, "events_extracted": 0, "chunks_added": 0, "errors": [str(e)]}
+    log_info("\n" + "=" * 60)
+    log_info("▶ STARTING: Boston Open Data → MySQL")
+    log_info("=" * 60)
+    boston_stats = safe_boston_sync()
+    log_success(f"COMPLETED: Boston Data ({boston_stats.get('total_records', 0)} records)")
 
-    # Separator
-    print("\n" + "-" * 80 + "\n")
+    return drive_stats, email_stats, boston_stats, dotnews_stats
 
-    # Run Google Drive sync
-    print("►" * 40)
-    print("► PHASE 1: Google Drive → Vector DB")
-    print("►" * 40)
 
-    try:
-        drive_stats = sync_google_drive_to_vectordb()
-    except Exception as e:
-        print(f"\n✗ FATAL: Google Drive sync failed: {e}")
-        drive_stats = {"files_processed": 0, "chunks_added": 0, "errors": [str(e)]}
+def run_parallel():
+    """Run phases in parallel with minimal logging."""
+    log_info("Running in PARALLEL mode\n")
 
-    # Separator
-    print("\n" + "-" * 80 + "\n")
+    # Dotnews first (quick)
+    log_info("▶ Starting: Dotnews")
+    dotnews_stats = sync_dotnews_newsletters()
+    errors = len(dotnews_stats.get("errors", []))
+    status = "✔" if errors == 0 else "✗"
+    log_info(f"  {status} Dotnews: {dotnews_stats.get('pdfs_processed', 0)} PDFs, " f"{dotnews_stats.get('events_extracted', 0)} events")
 
-    # Run Email sync
-    print("►" * 40)
-    print("► PHASE 2: Email Newsletter → Calendar SQL")
-    print("►" * 40)
+    start_time = datetime.now()
+    log_info("\n▶ Starting parallel: Google Drive, Email, Boston Data...")
 
-    try:
-        # Run in non-interactive mode for cron jobs
-        email_stats = sync_email_newsletters_to_sql(interactive=False)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        future_drive = executor.submit(safe_drive_sync)
+        future_email = executor.submit(safe_email_sync, False)
+        future_boston = executor.submit(safe_boston_sync)
 
-        # Check if auth was required (special handling for cron)
-        if email_stats.get("auth_required"):
-            print("\n" + "!" * 60)
-            print("! GMAIL AUTHENTICATION REQUIRED")
-            print("!" * 60)
-            print("! Visit this URL to authorize:")
-            print(f"! {email_stats.get('auth_url')}")
-            print("!")
-            print("! Or run manually:")
-            print("!   python email_to_calendar_sql.py --auth")
-            print("!" * 60 + "\n")
+        drive_stats = future_drive.result()
+        email_stats = future_email.result()
+        boston_stats = future_boston.result()
 
-    except AuthenticationRequiredError as e:
-        # Fallback catch (shouldn't hit this with interactive=False, but just in case)
-        print("\n⚠ Gmail authentication required!")
-        print(f"  Visit: {e.auth_url}")
-        print("  Or run: python email_to_calendar_sql.py --auth")
-        email_stats = {
-            "emails_processed": 0,
-            "events_extracted": 0,
-            "events_inserted": 0,
-            "errors": [f"Authentication required: {e.auth_url}"],
-            "auth_required": True,
-            "auth_url": e.auth_url,
-        }
-    except Exception as e:
-        print(f"\n✗ FATAL: Email sync failed: {e}")
-        email_stats = {"emails_processed": 0, "events_extracted": 0, "events_inserted": 0, "errors": [str(e)]}
+    elapsed = (datetime.now() - start_time).total_seconds()
+    log_info(f"\n✔ Parallel phases completed in {elapsed:.1f}s")
 
-    # Run Boston Open Data sync
-    print("►" * 40)
-    print("► PHASE 3: Boston Open Data → MySQL")
-    print("►" * 40)
-
-    boston_stats = None
-    try:
-        syncer = BostonDataSyncer()
-        boston_stats = syncer.sync_all()
-    except Exception as e:
-        print(f"\n✗ FATAL: Boston data sync failed: {e}")
-        boston_stats = {"datasets_synced": 0, "total_records": 0, "datasets": [{"dataset": "unknown", "errors": [str(e)]}]}
-
-    # Separator
-    print("\n" + "-" * 80 + "\n")
-
-    # Log summary
-    log_run_summary(drive_stats, email_stats, boston_stats, dotnews_stats)
-
-    # Print final summary
-    print_final_summary(drive_stats, email_stats, boston_stats, dotnews_stats)
-
-    # Exit with error code if there were failures
+    # Brief status
     drive_errors = len(drive_stats.get("errors", []))
     email_errors = len(email_stats.get("errors", []))
     boston_errors = sum(len(d.get("errors", [])) for d in boston_stats.get("datasets", [])) if boston_stats else 0
-    dotnews_errors = len(dotnews_stats.get("errors", [])) if dotnews_stats else 0
-    total_errors = drive_errors + email_errors + boston_errors + dotnews_errors
 
-    if total_errors > 0:
-        sys.exit(1)
+    status = "✔" if drive_errors == 0 else "✗"
+    log_info(f"  {status} Google Drive: {drive_stats.get('files_processed', 0)} files, " f"{drive_stats.get('chunks_added', 0)} chunks")
+
+    status = "✔" if email_errors == 0 else "✗"
+    log_info(f"  {status} Email: {email_stats.get('emails_processed', 0)} emails, " f"{email_stats.get('events_inserted', 0)} events")
+
+    status = "✔" if boston_errors == 0 else "✗"
+    log_info(f"  {status} Boston Data: {boston_stats.get('total_records', 0)} records")
+
+    return drive_stats, email_stats, boston_stats, dotnews_stats
+
+
+def main(parallel: bool = False, verbose: bool = False):
+    # Set verbosity for ALL modules via shared logging
+    if parallel and not verbose:
+        set_verbosity(Verbosity.NORMAL)
     else:
-        sys.exit(0)
+        set_verbosity(Verbosity.VERBOSE)
+
+    print_banner(f"DAILY DATA INGESTION - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
+    if verbose:
+        config.print_config_summary()
+        config.validate_config()
+
+    if parallel:
+        drive_stats, email_stats, boston_stats, dotnews_stats = run_parallel()
+    else:
+        drive_stats, email_stats, boston_stats, dotnews_stats = run_sequential()
+
+    log_run_summary(drive_stats, email_stats, boston_stats, dotnews_stats)
+    print_final_summary(drive_stats, email_stats, boston_stats, dotnews_stats)
+
+    total_errors = len(drive_stats.get("errors", [])) + len(email_stats.get("errors", [])) + (sum(len(d.get("errors", [])) for d in boston_stats.get("datasets", [])) if boston_stats else 0) + (len(dotnews_stats.get("errors", [])) if dotnews_stats else 0)
+
+    return 1 if total_errors > 0 else 0
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Daily data ingestion script")
+    parser.add_argument("--parallel", "-p", action="store_true", help="Run independent phases in parallel (faster, minimal logging)")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Show verbose output even in parallel mode")
+    parser.add_argument("--serial", "-s", action="store_true", help="Force serial execution with full debug output (default)")
+    args = parser.parse_args()
+
+    parallel = args.parallel and not args.serial
+
     try:
-        main()
+        exit_code = main(parallel=parallel, verbose=args.verbose)
+        sys.exit(exit_code)
     except KeyboardInterrupt:
-        print("\n\n⚠️  Interrupted by user. Exiting...")
-        sys.exit(130)  # Standard exit code for SIGINT
+        print("\n\n⚠  Interrupted by user. Exiting...")
+        sys.exit(130)
     except Exception as e:
         print(f"\n\n✗ FATAL ERROR: {e}")
         import traceback

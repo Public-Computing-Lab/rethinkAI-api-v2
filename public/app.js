@@ -7,11 +7,11 @@ const API_KEY = (window.AppConfig && window.AppConfig.apiKey) || '';
 
 // Warn if config is not loaded properly
 if (!window.AppConfig) {
-  console.warn('⚠️ AppConfig not loaded - run "node build-config.js" to generate from .env');
+  console.warn('⚠ AppConfig not loaded - run "node build-config.js" to generate from .env');
 }
 
 if (!API_KEY) {
-  console.error('❌ API Key is not configured. Please set RETHINKAI_API_KEY in .env and run build-config.js');
+  console.error('✗ API Key is not configured. Please set RETHINKAI_API_KEY in .env and run build-config.js');
 }
 // Application State
 const state = {

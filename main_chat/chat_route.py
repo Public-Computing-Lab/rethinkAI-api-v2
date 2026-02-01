@@ -601,7 +601,7 @@ def _run_rag(question: str, plan: Dict[str, Any], conversation_history: Optional
         combined_chunks.extend(t_chunks)
         combined_meta.extend(t_res.get("metadata", []))
     except Exception as e:
-        print(f"  ⚠️ Transcript retrieval error: {e}")
+        print(f"  ⚠ Transcript retrieval error: {e}")
 
     # policies
     try:
@@ -612,18 +612,18 @@ def _run_rag(question: str, plan: Dict[str, Any], conversation_history: Optional
                 print(f"  🔍 Querying policy source: {src}")
                 p_res = rag_retrieval.retrieve_policies(question, k=retrieval_k, source=src)
                 p_chunks = p_res.get("chunks", [])
-                print(f"    📋 Found {len(p_chunks)} chunks from {src}")
+                print(f"      Found {len(p_chunks)} chunks from {src}")
                 combined_chunks.extend(p_chunks)
                 combined_meta.extend(p_res.get("metadata", []))
         else:
             print("  🔍 No specific policy sources, searching all policies")
             p_res = rag_retrieval.retrieve_policies(question, k=retrieval_k)
             p_chunks = p_res.get("chunks", [])
-            print(f"  📋 Policies: {len(p_chunks)} chunks found")
+            print(f"    Policies: {len(p_chunks)} chunks found")
             combined_chunks.extend(p_chunks)
             combined_meta.extend(p_res.get("metadata", []))
     except Exception as e:
-        print(f"  ⚠️ Policy retrieval error: {e}")
+        print(f"  ⚠ Policy retrieval error: {e}")
 
     print(f"  📊 Total combined chunks: {len(combined_chunks)} (transcripts + policies)")
 

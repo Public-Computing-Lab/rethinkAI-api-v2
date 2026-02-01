@@ -143,7 +143,7 @@ def ensure_interaction_log_table():
         """
         )
         conn.commit()
-        print("✓ interaction_log table ready")
+        print("✔ interaction_log table ready")
     except Exception as e:
         print(f"Warning: Could not ensure interaction_log table: {e}")
     finally:

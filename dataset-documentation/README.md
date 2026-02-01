@@ -187,7 +187,7 @@ The platform uses a hybrid data architecture combining structured (SQL) and unst
 
 - Community assets: Update CSV file in `api/datastore/`
 - Static documents: Add to Google Drive folder
-- Database schema: See `main_chat/new_metadata/` for metadata generation
+- Database schema: See `main_chat/metadata/` for metadata generation
 
 ## Data Retention
 
@@ -206,7 +206,7 @@ The platform uses a hybrid data architecture combining structured (SQL) and unst
 ## Schema Metadata
 
 For detailed database schemas, see:
-- `main_chat/new_metadata/` - Auto-generated schema metadata
+- `main_chat/metadata/` - Auto-generated schema metadata
 - MySQL metadata: Generated via `generate_mysql_metadata_live.py`
 
 ## Example Data Queries

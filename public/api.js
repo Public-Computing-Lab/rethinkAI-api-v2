@@ -8,7 +8,7 @@ const ApiConfig = window.AppConfig || {
 };
 // Warn if using fallback config
 if (!window.AppConfig) {
-  console.warn('⚠️ AppConfig not loaded - using fallback configuration');
+  console.warn('⚠ AppConfig not loaded - using fallback configuration');
   console.warn('Run "node build-config.js" to generate config.js from .env');
 }
 

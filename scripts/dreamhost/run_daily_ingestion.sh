@@ -32,7 +32,7 @@ echo "Python location: $(which python3)"
     echo "Daily Ingestion Started: $(date)" 
     echo "==========================================" 
     
-    python3 main_daily_ingestion.py  2>&1
+    python3 main_daily_ingestion.py -p  2>&1
     
     EXIT_CODE=$?
     

@@ -24,8 +24,7 @@ from boston_data_sync import BostonDataSyncer
 
 def main():
     """Run the sync with error handling and logging."""
-    script_dir = Path(__file__).parent
-    log_file = script_dir / "boston_sync_scheduled.log"
+    log_file = Path(__file__).resolve().parents[4] / "logs/boston_sync_scheduled.log"
 
     print(f"\n{'='*60}")
     print("🕐 Scheduled Boston Data Sync")
@@ -43,15 +42,15 @@ def main():
             # Exit with error code if there were failures
             total_errors = sum(len(d.get("errors", [])) for d in stats["datasets"])
             if total_errors > 0:
-                print(f"\n⚠️  Sync completed with {total_errors} error(s)")
+                print(f"\n⚠  Sync completed with {total_errors} error(s)")
                 sys.exit(1)
             else:
-                print("\n✅ Sync completed successfully")
+                print("\n✔ Sync completed successfully")
                 sys.exit(0)
 
     except Exception as e:
         error_msg = f"Fatal error during sync: {e}"
-        print(f"\n❌ {error_msg}")
+        print(f"\n✗ {error_msg}")
 
         # Log error
         with open(log_file, "a") as f:

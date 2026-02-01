@@ -107,12 +107,8 @@ vectordb/*
 !api/datastore/Boston Anti-Displacement Plan Analysis.txt
 !api/*.sql
 !setup/*.sql
-/main_chat/vectordb_new
-main_chat/data_ingestion/gmail_token.json
-main_chat/data_ingestion/gmail_credentials.json
-main_chat/data_ingestion/.email_sync_state.json
-main_chat/data_ingestion/.sync_state.json
-main_chat/data_ingestion/ingestion_log.jsonl
-main_chat/data_ingestion/ontheporch-ebc5a60fc214.json
-main_chat/data_ingestion/temp_downloads
+main_chat/data/ingestion_log.jsonl
 main_chat/data_ingestion/reset_table.sql
+temp_downloads/
+vectordb/
+data/.sync*

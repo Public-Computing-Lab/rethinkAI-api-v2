@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 # Add parent directory to path to import config
-_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+_PROJECT_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(_PROJECT_ROOT))
 
 import config
@@ -27,7 +27,7 @@ try:
     if data.get("success"):
         result = data.get("result", {})
         total = result.get("total", 0)
-        print("✅ API accessible")
+        print("✔ API accessible")
         print(f"   Total records: {total:,}")
 
         records = result.get("records", [])
@@ -54,9 +54,9 @@ try:
                         found = name
                         break
                 if found:
-                    print(f"     ✅ {field_type}: '{found}'")
+                    print(f"     ✔ {field_type}: '{found}'")
                 else:
-                    print(f"     ❌ {field_type}: Not found (checked: {', '.join(possible_names)})")
+                    print(f"     ✗ {field_type}: Not found (checked: {', '.join(possible_names)})")
 
             # Check date range
             if "open_date" in sample or "open_dt" in sample:
@@ -67,7 +67,7 @@ try:
                     first_data = resp_first.json()
                     if first_data.get("success") and first_data.get("result", {}).get("records"):
                         first_date = first_data["result"]["records"][0].get(date_field, "N/A")
-                        print(f"\n   📅 First record date ({date_field}): {first_date}")
+                        print(f"\n      First record date ({date_field}): {first_date}")
 
                 params_desc = {"resource_id": resource_id, "limit": 1, "sort": f"{date_field} desc"}
                 resp_last = requests.get(url, params=params_desc, timeout=10)
@@ -75,13 +75,13 @@ try:
                     last_data = resp_last.json()
                     if last_data.get("success") and last_data.get("result", {}).get("records"):
                         last_date = last_data["result"]["records"][0].get(date_field, "N/A")
-                        print(f"   📅 Last record date ({date_field}): {last_date}")
+                        print(f"      Last record date ({date_field}): {last_date}")
     else:
-        print(f"❌ API Error: {data.get('error', 'Unknown error')}")
+        print(f"✗ API Error: {data.get('error', 'Unknown error')}")
         if isinstance(data.get("error"), dict):
             print(f"   Details: {json.dumps(data.get('error'), indent=2)}")
 except Exception as e:
-    print(f"❌ Error: {e}")
+    print(f"✗ Error: {e}")
     import traceback
 
     traceback.print_exc()

@@ -74,9 +74,9 @@ def test_policy_retrieval():
     # Show if policies were actually retrieved
     policy_chunks = sum(1 for m in metadata2 if m.get("doc_type") == "policy")
     if policy_chunks > 0:
-        print(f"\n✅ SUCCESS: Retrieved {policy_chunks} policy chunks!")
+        print(f"\n✔ SUCCESS: Retrieved {policy_chunks} policy chunks!")
     else:
-        print("\n❌ PROBLEM: No policy chunks retrieved even with policy_sources specified!")
+        print("\n✗ PROBLEM: No policy chunks retrieved even with policy_sources specified!")
 
 
 if __name__ == "__main__":

@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 # Add parent directory to path to import config
-_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+_PROJECT_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(_PROJECT_ROOT))
 
 import config
@@ -46,5 +46,5 @@ for dataset in data.get("result", {}).get("results", []):
                 test_data = test_resp.json()
                 if test_data.get("success"):
                     count = test_data.get("result", {}).get("total", 0)
-                    print(f"    ✅ Accessible via API - Total records: {count}")
+                    print(f"    ✔ Accessible via API - Total records: {count}")
     print("\n" + "=" * 60 + "\n")
