@@ -122,11 +122,11 @@ function formatSource(source) {
 
     // Add prefixes based on doc_type if available
     if (source.doc_type === 'policy') {
-      return `   ${displayName}`;
+      return `📄 ${displayName}`;
     } else if (source.doc_type === 'transcript') {
-      return `   ${displayName}`;
+      return `🗣️ ${displayName}`;
     } else if (source.doc_type === 'calendar_event') {
-      return `   ${displayName}`;
+      return `📅 ${displayName}`;
     }
 
     // No doc_type available, just return the source name
