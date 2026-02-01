@@ -15,8 +15,8 @@ function loadEnv(envPath = '.env') {
   const env = {};
   
   if (!fs.existsSync(envPath)) {
-	console.error('❌ .env file not found at:', path.resolve(envPath));
-	console.log('💡 Create a .env file based on .env.example');
+	console.error('✗ .env file not found at:', path.resolve(envPath));
+	console.log('   Create a .env file based on .env.example');
 	return env;
   }
   
@@ -59,7 +59,7 @@ function generateConfig() {
   const env = loadEnv(envPath);
   
   if (Object.keys(env).length === 0) {
-	console.error('❌ No environment variables loaded');
+	console.error('✗ No environment variables loaded');
 	process.exit(1);
   }
   
@@ -72,7 +72,7 @@ function generateConfig() {
   
   // Validate required fields
   if (!config.apiKey) {
-	console.warn('⚠️  Warning: RETHINKAI_API_KEY is not set in .env');
+	console.warn('⚠  Warning: RETHINKAI_API_KEY is not set in .env');
   }
   
   // Generate JavaScript file content
@@ -87,19 +87,19 @@ window.AppConfig = ${JSON.stringify(config, null, 2)};
   const outputPath = path.join(__dirname, 'config.js');
   fs.writeFileSync(outputPath, configJs, 'utf8');
   
-  console.log('✅ Configuration generated successfully!');
-  console.log('📄 Output file:', outputPath);
-  console.log('\n📋 Configuration:');
+  console.log('✔ Configuration generated successfully!');
+  console.log('   Output file:', outputPath);
+  console.log('\n  Configuration:');
   console.log('   Base URL:', config.baseUrl);
   console.log('   API Key:', config.apiKey ? `${config.apiKey.substring(0, 20)}...` : '(not set)');
   console.log('   Timeout:', config.timeoutMs + 'ms');
-  console.log('\n💡 Remember to run this script before deploying!');
+  console.log('\n   Remember to run this script before deploying!');
 }
 
 // Run the generator
 try {
   generateConfig();
 } catch (error) {
-  console.error('❌ Error generating config:', error.message);
+  console.error('✗ Error generating config:', error.message);
   process.exit(1);
 }

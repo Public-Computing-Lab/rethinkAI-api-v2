@@ -77,5 +77,5 @@ if __name__ == "__main__":
     print("SUMMARY")
     print("=" * 50)
     for name, passed in results:
-        status = "✓ PASS" if passed else "✗ FAIL"
+        status = "✔ PASS" if passed else "✗ FAIL"
         print(f"{name}: {status}")

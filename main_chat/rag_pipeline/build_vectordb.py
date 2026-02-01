@@ -14,6 +14,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_PROJECT_ROOT))
 
 import config
+from main_chat.data_ingestion.utils.log_util import log_debug, log_info, log_error, log_success, log_warning
 
 # Default input directories (can be overridden by callers)
 DEFAULT_POLICY_DIR = Path("Data/VectorDB_text")
@@ -88,7 +89,7 @@ def load_policy_documents(policy_dir: Path):
         return documents
 
     text_files = list(policy_dir.glob("*.txt"))
-    print(f"Found {len(text_files)} policy files")
+    log_debug(f"Found {len(text_files)} policy files")
 
     # Define headers to split on
     headers_to_split_on = [("#", "Heading"), ("##", "Sub Heading")]
@@ -97,7 +98,7 @@ def load_policy_documents(policy_dir: Path):
     markdown_splitter = MarkdownHeaderTextSplitter(headers_to_split_on=headers_to_split_on, strip_headers=False)
 
     for file_path in text_files:
-        print(f"Processing policy: {file_path.name}...")
+        log_debug(f"Processing policy: {file_path.name}...")
 
         with open(file_path, "r", encoding="utf-8") as f:
             content = f.read()
@@ -110,7 +111,7 @@ def load_policy_documents(policy_dir: Path):
             doc.metadata["doc_type"] = "policy"
             documents.append(doc)
 
-    print(f"Created {len(documents)} policy chunks")
+    log_debug(f"Created {len(documents)} policy chunks")
     return documents
 
 
@@ -122,14 +123,14 @@ def load_transcript_documents(transcript_dir: Path):
         return documents
 
     transcript_files = list(transcript_dir.glob("*.txt"))
-    print(f"Found {len(transcript_files)} transcript files")
+    log_debug(f"Found {len(transcript_files)} transcript files")
 
     for file_path in transcript_files:
-        print(f"Processing transcript: {file_path.name}...")
+        log_debug(f"Processing transcript: {file_path.name}...")
         chunks = parse_transcript_chunks(file_path)
         documents.extend(chunks)
 
-    print(f"Created {len(documents)} transcript chunks")
+    log_debug(f"Created {len(documents)} transcript chunks")
     return documents
 
 
@@ -269,7 +270,7 @@ def load_newsletter_documents(newsletter_dir: Path):
         return documents
 
     pdf_files = list(newsletter_dir.glob("*.pdf"))
-    print(f"Found {len(pdf_files)} newsletter PDFs")
+    log_debug(f"Found {len(pdf_files)} newsletter PDFs")
 
     for pdf_path in pdf_files:
         reader = PdfReader(str(pdf_path))
@@ -286,7 +287,7 @@ def load_newsletter_documents(newsletter_dir: Path):
         docs = _newsletter_events_to_documents(all_events, str(pdf_path))
         documents.extend(docs)
 
-    print(f"Created {len(documents)} newsletter calendar_event chunks")
+    log_debug(f"Created {len(documents)} newsletter calendar_event chunks")
     return documents
 
 
@@ -312,34 +313,34 @@ def build_vectordb(
     all_documents = policy_docs + transcript_docs + newsletter_docs
 
     if not all_documents:
-        print("No documents found to add to vector DB.")
+        log_debug("No documents found to add to vector DB.")
         return None
 
-    print(f"\n{'='*80}")
-    print(f"Total documents to add: {len(all_documents)}")
-    print(f"  - Policy chunks: {len(policy_docs)}")
-    print(f"  - Transcript chunks: {len(transcript_docs)}")
-    print(f"  - Newsletter chunks: {len(newsletter_docs)}")
-    print(f"{'='*80}\n")
+    log_debug(f"\n{'='*80}")
+    log_debug(f"Total documents to add: {len(all_documents)}")
+    log_debug(f"  - Policy chunks: {len(policy_docs)}")
+    log_debug(f"  - Transcript chunks: {len(transcript_docs)}")
+    log_debug(f"  - Newsletter chunks: {len(newsletter_docs)}")
+    log_debug(f"{'='*80}\n")
 
     embeddings = GeminiEmbeddings()
 
     if vectordb_dir.exists():
-        print(f"Adding documents to existing vector database at {vectordb_dir}")
+        log_debug(f"Adding documents to existing vector database at {vectordb_dir}")
         vectordb = Chroma(
             persist_directory=str(vectordb_dir),
             embedding_function=embeddings,
         )
         vectordb.add_documents(all_documents)
     else:
-        print(f"Creating new vector database at {vectordb_dir}")
+        log_debug(f"Creating new vector database at {vectordb_dir}")
         vectordb = Chroma.from_documents(
             documents=all_documents,
             embedding=embeddings,
             persist_directory=str(vectordb_dir),
         )
 
-    print("Vector database update complete.")
+    log_debug("Vector database update complete.")
     return vectordb
 
 

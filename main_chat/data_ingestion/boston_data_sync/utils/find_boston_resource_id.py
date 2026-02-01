@@ -16,7 +16,7 @@ from typing import Optional, List, Dict
 from pathlib import Path
 
 # Add parent directory to path to import config
-_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+_PROJECT_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(_PROJECT_ROOT))
 
 import config
@@ -36,7 +36,7 @@ def search_datasets(query: str) -> List[Dict]:
             return data["result"]["results"]
         return []
     except Exception as e:
-        print(f"❌ Error searching: {e}")
+        print(f"✗ Error searching: {e}")
         return []
 
 
@@ -54,7 +54,7 @@ def get_package_resources(package_id: str) -> List[Dict]:
             return data["result"].get("resources", [])
         return []
     except Exception as e:
-        print(f"❌ Error fetching package: {e}")
+        print(f"✗ Error fetching package: {e}")
         return []
 
 
@@ -69,7 +69,7 @@ def test_resource(resource_id: str) -> bool:
         data = response.json()
         return data.get("success", False)
     except Exception as e:
-        print(f"❌ Error, package not accessible: {e}")
+        print(f"✗ Error, package not accessible: {e}")
         return False
 
 
@@ -81,10 +81,10 @@ def find_resource_id(query: str) -> Optional[str]:
     datasets = search_datasets(query)
 
     if not datasets:
-        print("❌ No datasets found")
+        print("✗ No datasets found")
         return None
 
-    print(f"📋 Found {len(datasets)} dataset(s):\n")
+    print(f"  Found {len(datasets)} dataset(s):\n")
 
     for i, dataset in enumerate(datasets, 1):
         print(f"{i}. {dataset.get('title', 'Untitled')}")
@@ -103,7 +103,7 @@ def find_resource_id(query: str) -> Optional[str]:
     resources = get_package_resources(selected["id"])
 
     if not resources:
-        print("❌ No resources found in this dataset")
+        print("✗ No resources found in this dataset")
         return None
 
     # Find datastore resources (those accessible via API)
@@ -113,13 +113,13 @@ def find_resource_id(query: str) -> Optional[str]:
             datastore_resources.append(resource)
 
     if not datastore_resources:
-        print("⚠️  No datastore resources found (resources not accessible via API)")
+        print("⚠  No datastore resources found (resources not accessible via API)")
         print("\nAvailable resources:")
         for resource in resources:
             print(f"   - {resource.get('name', 'Unnamed')} ({resource.get('format', 'N/A')})")
         return None
 
-    print(f"✅ Found {len(datastore_resources)} datastore resource(s):\n")
+    print(f"✔ Found {len(datastore_resources)} datastore resource(s):\n")
 
     for i, resource in enumerate(datastore_resources, 1):
         print(f"{i}. {resource.get('name', 'Unnamed Resource')}")
@@ -131,7 +131,7 @@ def find_resource_id(query: str) -> Optional[str]:
     # Return first resource ID
     if datastore_resources:
         resource_id = datastore_resources[0].get("id")
-        print(f"✅ Recommended Resource ID: {resource_id}\n")
+        print(f"✔ Recommended Resource ID: {resource_id}\n")
         print("Add this to your boston_datasets_config.json:")
         print(f'  "resource_id": "{resource_id}"')
         return resource_id
@@ -152,9 +152,9 @@ def main():
     resource_id = find_resource_id(query)
 
     if resource_id:
-        print(f"\n✅ Resource ID found: {resource_id}")
+        print(f"\n✔ Resource ID found: {resource_id}")
     else:
-        print("\n❌ Could not find resource ID")
+        print("\n✗ Could not find resource ID")
         sys.exit(1)
 
 

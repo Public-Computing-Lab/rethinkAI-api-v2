@@ -8,12 +8,12 @@ from pathlib import Path
 from datetime import datetime
 
 # Add parent directory to path for imports
-_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_PROJECT_ROOT))
 
 import config
-from email_to_calendar_sql import get_gmail_service, get_gmail_credentials
-from google_drive_to_vectordb import get_drive_service
+from main_chat.data_ingestion.email_to_calendar_sql import get_gmail_service, get_gmail_credentials
+from main_chat.data_ingestion.google_drive_to_vectordb import get_drive_service
 import base64
 import email
 
@@ -28,21 +28,21 @@ def test_gmail_connection():
         # Test OAuth credentials
         print("\n1. Testing OAuth 2.0 authentication...")
         creds = get_gmail_credentials()
-        print("   ✓ OAuth credentials valid")
-        print(f"   ✓ Token expires: {creds.expiry if creds.expiry else 'No expiry'}")
+        print("   ✔ OAuth credentials valid")
+        print(f"   ✔ Token expires: {creds.expiry if creds.expiry else 'No expiry'}")
 
         # Connect to Gmail API
         print("\n2. Connecting to Gmail API...")
         service = get_gmail_service()
-        print("   ✓ Connected to Gmail API")
+        print("   ✔ Connected to Gmail API")
 
         # Get profile info
         print("\n3. Getting mailbox info...")
         profile = service.users().getProfile(userId="me").execute()
         email_addr = profile.get("emailAddress", "Unknown")
         total_messages = profile.get("messagesTotal", 0)
-        print(f"   ✓ Account: {email_addr}")
-        print(f"   ✓ Total messages: {total_messages}")
+        print(f"   ✔ Account: {email_addr}")
+        print(f"   ✔ Total messages: {total_messages}")
 
         # Get 2 most recent emails
         print("\n4. Fetching 2 most recent emails...")
@@ -75,7 +75,7 @@ def test_gmail_connection():
         else:
             print("\n   ⚠ No emails found in inbox")
 
-        print("✓ Gmail connection test successful!\n")
+        print("✔ Gmail connection test successful!\n")
         return True
 
     except FileNotFoundError as e:
@@ -99,8 +99,8 @@ def test_google_drive_connection():
         # Test service account credentials
         print("\n1. Testing service account authentication...")
         service = get_drive_service()
-        print("   ✓ Service account authenticated")
-        print(f"   ✓ Using credentials: {config.GOOGLE_CREDENTIALS_PATH}")
+        print("   ✔ Service account authenticated")
+        print(f"   ✔ Using credentials: {config.GOOGLE_CREDENTIALS_PATH}")
 
         # List files in the folder
         print(f"\n2. Listing files in folder: {config.GOOGLE_DRIVE_FOLDER_ID}...")
@@ -139,7 +139,7 @@ def test_google_drive_connection():
 
                 # Get file extension
                 ext = Path(name).suffix.lower()
-                supported = "✓" if ext in config.SUPPORTED_EXTENSIONS else "✗"
+                supported = "✔" if ext in config.SUPPORTED_EXTENSIONS else "✗"
 
                 print(f"   File #{i}:")
                 print(f"   - Name: {name}")
@@ -148,7 +148,7 @@ def test_google_drive_connection():
                 print(f"   - Supported for ingestion: {supported}")
                 print()
 
-        print("✓ Google Drive connection test successful!\n")
+        print("✔ Google Drive connection test successful!\n")
         return True
 
     except FileNotFoundError as e:
@@ -183,7 +183,7 @@ def main():
         print("\nPlease fix these errors in your .env file before running tests.\n")
         return
 
-    print("✓ Configuration valid\n")
+    print("✔ Configuration valid\n")
 
     # Run tests
     gmail_ok = test_gmail_connection()
@@ -193,14 +193,14 @@ def main():
     print("=" * 80)
     print("TEST SUMMARY")
     print("=" * 80)
-    print(f"Gmail Connection:        {'✓ PASS' if gmail_ok else '✗ FAIL'}")
-    print(f"Google Drive Connection: {'✓ PASS' if drive_ok else '✗ FAIL'}")
+    print(f"Gmail Connection:        {'✔ PASS' if gmail_ok else '✗ FAIL'}")
+    print(f"Google Drive Connection: {'✔ PASS' if drive_ok else '✗ FAIL'}")
     print("=" * 80)
 
     if gmail_ok and drive_ok:
-        print("\n✅ All tests passed! You're ready to run the ingestion scripts.\n")
+        print("\n✔ All tests passed! You're ready to run the ingestion scripts.\n")
     else:
-        print("\n⚠️  Some tests failed. Please fix the issues above before running ingestion.\n")
+        print("\n⚠  Some tests failed. Please fix the issues above before running ingestion.\n")
 
 
 if __name__ == "__main__":

@@ -10,7 +10,7 @@ import pandas as pd
 from pathlib import Path
 
 # Add parent directory to path to import config
-_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+_PROJECT_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(_PROJECT_ROOT))
 
 import config

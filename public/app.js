@@ -7,11 +7,11 @@ const API_KEY = (window.AppConfig && window.AppConfig.apiKey) || '';
 
 // Warn if config is not loaded properly
 if (!window.AppConfig) {
-  console.warn('⚠️ AppConfig not loaded - run "node build-config.js" to generate from .env');
+  console.warn('⚠ AppConfig not loaded - run "node build-config.js" to generate from .env');
 }
 
 if (!API_KEY) {
-  console.error('❌ API Key is not configured. Please set RETHINKAI_API_KEY in .env and run build-config.js');
+  console.error('✗ API Key is not configured. Please set RETHINKAI_API_KEY in .env and run build-config.js');
 }
 // Application State
 const state = {
@@ -122,11 +122,11 @@ function formatSource(source) {
 
     // Add prefixes based on doc_type if available
     if (source.doc_type === 'policy') {
-      return `📄 ${displayName}`;
+      return `   ${displayName}`;
     } else if (source.doc_type === 'transcript') {
-      return `🗣️ ${displayName}`;
+      return `   ${displayName}`;
     } else if (source.doc_type === 'calendar_event') {
-      return `📅 ${displayName}`;
+      return `   ${displayName}`;
     }
 
     // No doc_type available, just return the source name

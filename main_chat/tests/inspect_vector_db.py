@@ -27,11 +27,11 @@ def inspect_vectordb():
         all_docs = vectordb.get(limit=10000)
 
         if not all_docs or not all_docs.get("metadatas"):
-            print("❌ No documents found in vector database!")
+            print("✗ No documents found in vector database!")
             return
 
         metadatas = all_docs["metadatas"]
-        print(f"\n✅ Total documents in database: {len(metadatas)}\n")
+        print(f"\n✔ Total documents in database: {len(metadatas)}\n")
 
         # Count by doc_type
         doc_types = {}
@@ -72,7 +72,7 @@ def inspect_vectordb():
 
         # Show a flat list of all unique filenames
         print("\n" + "=" * 80)
-        print("📋 UNIQUE FILENAMES (flat list)")
+        print("  UNIQUE FILENAMES (flat list)")
         print("=" * 80)
 
         all_sources = set()
@@ -98,7 +98,7 @@ def inspect_vectordb():
         chunks = result.get("chunks", [])
         metadata = result.get("metadata", [])
 
-        print(f"✅ Retrieved {len(chunks)} chunks")
+        print(f"✔ Retrieved {len(chunks)} chunks")
 
         if chunks:
             print("\nFirst 2 results:")
@@ -108,7 +108,7 @@ def inspect_vectordb():
                 print(f"  Type: {meta.get('doc_type', 'unknown')}")
                 print(f"  Preview: {chunk[:200]}...")
         else:
-            print("❌ No chunks retrieved! This is the problem.")
+            print("✗ No chunks retrieved! This is the problem.")
             # Try a more specific source filter
             print("\nTrying with specific source filter...")
             result2 = retrieve_policies(test_query, k=5, source="Boston Anti-Displacement Plan Analysis.txt")
@@ -116,7 +116,7 @@ def inspect_vectordb():
             print(f"Retrieved {len(chunks2)} chunks with source filter")
 
     except Exception as e:
-        print(f"❌ Error inspecting database: {e}")
+        print(f"✗ Error inspecting database: {e}")
         import traceback
 
         traceback.print_exc()

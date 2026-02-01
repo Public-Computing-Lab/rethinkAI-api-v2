@@ -8,8 +8,9 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import List, Dict
+from typing import List, Dict, Optional
 from datetime import datetime
+import concurrent.futures
 
 # Google Drive API
 from google.oauth2.service_account import Credentials as ServiceAccountCredentials
@@ -27,7 +28,72 @@ sys.path.insert(0, str(_PROJECT_ROOT))
 import config
 from main_chat.rag_pipeline.rag_retrieval import GeminiEmbeddings
 import main_chat.sql_pipeline.sql_retrieval as sql_retrieval
-from utils.document_processor import process_file_to_documents, extract_pages_from_pdf
+from main_chat.data_ingestion.utils.document_processor import process_file_to_documents, extract_pages_from_pdf
+from main_chat.data_ingestion.utils.log_util import log_debug, log_info, log_error, log_success, log_warning
+
+# =============================================================================
+# Pre-compiled regex patterns (compiled once at module load)
+# =============================================================================
+
+# Date patterns for PDF content extraction
+_PDF_DATE_PATTERNS = [
+    # Full format: "Day, Month Day, Year"
+    re.compile(r"(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),\s+" r"(January|February|March|April|May|June|July|August|September|October|November|December)\s+" r"(\d{1,2}),\s+(\d{4})", re.IGNORECASE),
+    # Without day of week: "November 20, 2025"
+    re.compile(r"(January|February|March|April|May|June|July|August|September|October|November|December)\s+" r"(\d{1,2}),\s+(\d{4})", re.IGNORECASE),
+    # Alternative: "Nov 20, 2025"
+    re.compile(r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+" r"(\d{1,2}),\s+(\d{4})", re.IGNORECASE),
+]
+
+# Date patterns for filename extraction with their group order (year, month, day)
+_FILENAME_DATE_PATTERNS = [
+    (re.compile(r"(\d{4})-(\d{2})-(\d{2})"), lambda m: (m.group(1), m.group(2), m.group(3))),  # YYYY-MM-DD
+    (re.compile(r"(\d{2})/(\d{2})/(\d{4})"), lambda m: (m.group(3), m.group(1), m.group(2))),  # MM/DD/YYYY
+    (re.compile(r"(\d{4})(\d{2})(\d{2})"), lambda m: (m.group(1), m.group(2), m.group(3))),  # YYYYMMDD
+    (re.compile(r"(\d{2})_(\d{2})_(\d{4})"), lambda m: (m.group(3), m.group(1), m.group(2))),  # MM_DD_YYYY
+]
+
+# JSON cleanup patterns
+_JSON_MARKDOWN_FENCE_START = re.compile(r"^```(?:json|javascript)?\s*", re.MULTILINE)
+_JSON_MARKDOWN_FENCE_END = re.compile(r"\s*```$")
+_JSON_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+_JSON_TRAILING_COMMAS = re.compile(r",\s*([}\]])")
+_JSON_ARRAY_OR_OBJECT = re.compile(r"[\[{].*[}\]]", re.DOTALL)
+
+# Time validation pattern
+_TIME_PATTERN = re.compile(r"^\d{1,2}:\d{2}(:\d{2})?$")
+
+# Month name to number mapping
+_MONTH_MAP = {
+    "january": "01",
+    "february": "02",
+    "march": "03",
+    "april": "04",
+    "may": "05",
+    "june": "06",
+    "july": "07",
+    "august": "08",
+    "september": "09",
+    "october": "10",
+    "november": "11",
+    "december": "12",
+    "jan": "01",
+    "feb": "02",
+    "mar": "03",
+    "apr": "04",
+    "jun": "06",
+    "jul": "07",
+    "aug": "08",
+    "sep": "09",
+    "oct": "10",
+    "nov": "11",
+    "dec": "12",
+}
+
+
+# =============================================================================
+# Sync State Management
+# =============================================================================
 
 
 def load_sync_state() -> dict:
@@ -46,9 +112,15 @@ def save_sync_state(state: dict) -> None:
     config.SYNC_STATE_FILE.write_text(json.dumps(state, indent=2))
 
 
+# =============================================================================
+# Google Drive API
+# =============================================================================
+
+
 def get_drive_service():
     """Authenticate and return Google Drive service."""
-    if not Path(config.GOOGLE_CREDENTIALS_PATH).exists():
+    creds_path = Path(config.GOOGLE_CREDENTIALS_PATH)
+    if not creds_path.exists():
         raise FileNotFoundError(f"Google credentials file not found: {config.GOOGLE_CREDENTIALS_PATH}")
 
     creds = ServiceAccountCredentials.from_service_account_file(config.GOOGLE_CREDENTIALS_PATH, scopes=["https://www.googleapis.com/auth/drive.readonly"])
@@ -56,36 +128,26 @@ def get_drive_service():
 
 
 def list_subfolders(service, folder_id: str) -> List[dict]:
-    """
-    List all subfolders in a Google Drive folder.
-    Returns list of folder metadata: {id, name}
-    """
+    """List all subfolders in a Google Drive folder."""
     query = f"'{folder_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
-
     try:
         results = service.files().list(q=query, fields="files(id, name)", pageSize=100).execute()
     except Exception as e:
         raise RuntimeError(f"Failed to list subfolders from Google Drive: {e}")
-
     return results.get("files", [])
 
 
 def list_files_in_folder(service, folder_id: str, folder_name: str, processed_files: dict) -> List[dict]:
-    """
-    List all files in a specific Google Drive folder that haven't been processed yet.
-    Returns list of file metadata with folder_category included.
-    """
+    """List all files in a specific Google Drive folder that haven't been processed yet."""
     query = f"'{folder_id}' in parents and mimeType!='application/vnd.google-apps.folder' and trashed=false"
-
     try:
         results = service.files().list(q=query, fields="files(id, name, mimeType, modifiedTime, md5Checksum)", pageSize=1000).execute()
     except Exception as e:
         raise RuntimeError(f"Failed to list files from folder '{folder_name}': {e}")
 
     all_files = results.get("files", [])
-
-    # Filter out already processed files and add folder category
     new_files = []
+
     for file in all_files:
         file_id = file["id"]
         modified_time = file.get("modifiedTime", "")
@@ -93,12 +155,11 @@ def list_files_in_folder(service, folder_id: str, folder_name: str, processed_fi
         # Check if we've seen this file with the same modification time
         if file_id in processed_files:
             if processed_files[file_id].get("modifiedTime") == modified_time:
-                continue  # Already processed this version
+                continue
 
         # Check file extension
         ext = Path(file["name"]).suffix.lower()
         if ext in config.SUPPORTED_EXTENSIONS:
-            # Add folder category to file metadata
             file["folder_category"] = folder_name
             new_files.append(file)
 
@@ -106,39 +167,45 @@ def list_files_in_folder(service, folder_id: str, folder_name: str, processed_fi
 
 
 def list_new_files_from_drive(service, folder_id: str, processed_files: dict) -> List[dict]:
-    """
-    List all files in the Google Drive folder and its subfolders that haven't been processed yet.
-    Files are tagged with their folder_category (subfolder name).
-    Returns list of file metadata: {id, name, mimeType, modifiedTime, folder_category}
-    """
+    """List all files in the Google Drive folder and subfolders that haven't been processed yet."""
     if not folder_id:
         raise ValueError("GOOGLE_DRIVE_FOLDER_ID is not set")
 
     all_new_files = []
 
-    # First, get files directly in the root folder (tagged as 'root')
+    # Get files directly in the root folder
     root_files = list_files_in_folder(service, folder_id, "root", processed_files)
     all_new_files.extend(root_files)
     if root_files:
-        print(f"  Found {len(root_files)} new files in root folder")
+        log_debug(f"  Found {len(root_files)} new files in root folder")
 
-    # Then, scan each subfolder
+    # Scan each subfolder
     subfolders = list_subfolders(service, folder_id)
-    print(f"  Found {len(subfolders)} subfolders: {[f['name'] for f in subfolders]}")
+    log_debug(f"  Found {len(subfolders)} subfolders: {[f['name'] for f in subfolders]}")
 
     for subfolder in subfolders:
-        subfolder_files = list_files_in_folder(service, subfolder["id"], subfolder["name"], processed_files)  # Use subfolder name as category
+        subfolder_files = list_files_in_folder(service, subfolder["id"], subfolder["name"], processed_files)
         all_new_files.extend(subfolder_files)
         if subfolder_files:
-            print(f"  Found {len(subfolder_files)} new files in '{subfolder['name']}'")
+            log_debug(f"  Found {len(subfolder_files)} new files in '{subfolder['name']}'")
 
     return all_new_files
 
 
-def download_file(service, file_id: str, file_name: str) -> Path:
-    """Download a file from Google Drive to temp directory."""
+def download_file(service, file_id: str, file_name: str, folder_category: str = None) -> Path:
+    """Download a file from Google Drive to temp directory, organized by category."""
     request = service.files().get_media(fileId=file_id)
-    local_path = Path(config.TEMP_DOWNLOAD_DIR) / file_name
+
+    # Determine target directory based on folder category
+    if folder_category and folder_category != "root":
+        target_dir = config.DATA_DOWNLOAD_DIR / folder_category
+    else:
+        target_dir = config.DATA_DOWNLOAD_DIR
+
+    # Ensure directory exists
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    local_path = target_dir / file_name
 
     try:
         with io.FileIO(local_path, "wb") as fh:
@@ -146,150 +213,111 @@ def download_file(service, file_id: str, file_name: str) -> Path:
             done = False
             while not done:
                 status, done = downloader.next_chunk()
-                if status and config.VERBOSE_LOGGING:
-                    print(f"    Download {int(status.progress() * 100)}%")
+                if status:
+                    log_debug(f"    Download {int(status.progress() * 100)}%")
     except Exception as e:
         raise RuntimeError(f"Failed to download file {file_name}: {e}")
 
     return local_path
 
 
-def _extract_date_from_pdf_content(file_path: Path) -> str | None:
+# =============================================================================
+# Date Extraction Utilities
+# =============================================================================
+
+
+def _extract_date_from_pdf_content(file_path: Path) -> Optional[str]:
     """
     Extract publication date from the first page of the PDF.
-    Looks for patterns like "Thursday, November 20, 2025" or "Volume X Issue Y, [Day], [Month] [Day], [Year]"
     Returns date in YYYY-MM-DD format or None if not found.
     """
     try:
         pages = extract_pages_from_pdf(file_path)
-        if not pages or len(pages) == 0:
+        if not pages:
             return None
 
-        # Get first page text
         first_page_text = pages[0]["text"]
 
-        # Look for date patterns in the first page
-        # Pattern 1: "Thursday, November 20, 2025" or "Monday, January 1, 2025"
-        date_patterns = [
-            # Full format: "Day, Month Day, Year"
-            r"(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),\s+" r"(January|February|March|April|May|June|July|August|September|October|November|December)\s+" r"(\d{1,2}),\s+(\d{4})",
-            # Without day of week: "November 20, 2025"
-            r"(January|February|March|April|May|June|July|August|September|October|November|December)\s+" r"(\d{1,2}),\s+(\d{4})",
-            # Alternative: "Nov 20, 2025"
-            r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+" r"(\d{1,2}),\s+(\d{4})",
-        ]
-
-        month_map = {
-            "january": "01",
-            "february": "02",
-            "march": "03",
-            "april": "04",
-            "may": "05",
-            "june": "06",
-            "july": "07",
-            "august": "08",
-            "september": "09",
-            "october": "10",
-            "november": "11",
-            "december": "12",
-            "jan": "01",
-            "feb": "02",
-            "mar": "03",
-            "apr": "04",
-            "may": "05",
-            "jun": "06",
-            "jul": "07",
-            "aug": "08",
-            "sep": "09",
-            "oct": "10",
-            "nov": "11",
-            "dec": "12",
-        }
-
-        for pattern in date_patterns:
-            match = re.search(pattern, first_page_text, re.IGNORECASE)
+        for pattern in _PDF_DATE_PATTERNS:
+            match = pattern.search(first_page_text)
             if match:
                 try:
-                    if len(match.groups()) == 3:
-                        month_name, day, year = match.groups()
-                        month = month_map.get(month_name.lower(), None)
-                        if month:
-                            date_str = f"{year}-{month}-{day.zfill(2)}"
-                            # Validate the date
-                            datetime.strptime(date_str, "%Y-%m-%d")
-                            return date_str
+                    month_name, day, year = match.groups()
+                    month = _MONTH_MAP.get(month_name.lower())
+                    if month:
+                        date_str = f"{year}-{month}-{day.zfill(2)}"
+                        datetime.strptime(date_str, "%Y-%m-%d")  # Validate
+                        return date_str
                 except (ValueError, AttributeError):
                     continue
 
         return None
     except Exception as e:
-        if config.VERBOSE_LOGGING:
-            print(f"    ⚠ Could not extract date from PDF content: {e}")
+        log_debug(f"    ⚠ Could not extract date from PDF content: {e}")
         return None
 
 
-def _extract_date_from_filename(filename: str) -> str | None:
+def _extract_date_from_filename(filename: str) -> Optional[str]:
     """
     Try to extract a publication date from newsletter filename.
-    Common patterns: "REP 47_25web.pdf", "Newsletter_2025-01-15.pdf", "Jan15_2025.pdf"
     Returns date in YYYY-MM-DD format or None if not found.
     """
-    import re
-
-    # Try various date patterns
-    patterns = [
-        r"(\d{4})-(\d{2})-(\d{2})",  # YYYY-MM-DD
-        r"(\d{2})/(\d{2})/(\d{4})",  # MM/DD/YYYY
-        r"(\d{4})(\d{2})(\d{2})",  # YYYYMMDD
-        r"(\d{2})_(\d{2})_(\d{4})",  # MM_DD_YYYY
-    ]
-
-    for pattern in patterns:
-        match = re.search(pattern, filename)
+    for pattern, extractor in _FILENAME_DATE_PATTERNS:
+        match = pattern.search(filename)
         if match:
             try:
-                if len(match.groups()) == 3:
-                    if pattern == r"(\d{4})-(\d{2})-(\d{2})":
-                        year, month, day = match.groups()
-                    elif pattern == r"(\d{2})/(\d{2})/(\d{4})":
-                        month, day, year = match.groups()
-                    elif pattern == r"(\d{4})(\d{2})(\d{2})":
-                        year, month, day = match.groups()
-                    elif pattern == r"(\d{2})_(\d{2})_(\d{4})":
-                        month, day, year = match.groups()
-
-                    date_str = f"{year}-{month.zfill(2)}-{day.zfill(2)}"
-                    # Validate the date
-                    datetime.strptime(date_str, "%Y-%m-%d")
-                    return date_str
+                year, month, day = extractor(match)
+                date_str = f"{year}-{month.zfill(2)}-{day.zfill(2)}"
+                datetime.strptime(date_str, "%Y-%m-%d")  # Validate
+                return date_str
             except (ValueError, IndexError):
                 continue
-
-    # Try to extract year from patterns like "REP 47_25web.pdf" (year 2025)
-    # But don't use this as a fallback - it's too unreliable
-    # Instead, return None and let the file modification date be used
-    # year_match = re.search(r'[_\s](\d{2})(?:web|\.pdf|$)', filename)
-    # if year_match:
-    #     year_suffix = year_match.group(1)
-    #     # Assume 20XX for years 00-99
-    #     current_year = datetime.now().year
-    #     century = (current_year // 100) * 100
-    #     year = century + int(year_suffix)
-    #     # Use first day of year as fallback (better than nothing)
-    #     return f"{year}-01-01"
-
     return None
+
+
+# =============================================================================
+# JSON Cleanup Utilities
+# =============================================================================
+
+
+def _clean_llm_json(text: str) -> str:
+    """
+    Clean LLM JSON response in a single pass.
+    Handles markdown fences, control characters, and trailing commas.
+    """
+    if not text:
+        return ""
+
+    text = text.strip()
+
+    # Strip markdown code fences
+    text = _JSON_MARKDOWN_FENCE_START.sub("", text)
+    text = _JSON_MARKDOWN_FENCE_END.sub("", text)
+
+    # Remove control characters
+    text = _JSON_CONTROL_CHARS.sub(" ", text)
+
+    # Remove trailing commas before } or ]
+    text = _JSON_TRAILING_COMMAS.sub(r"\1", text)
+
+    # Extract JSON array/object if embedded in other text
+    text = text.strip()
+    if not (text.startswith("[") or text.startswith("{")):
+        match = _JSON_ARRAY_OR_OBJECT.search(text)
+        if match:
+            text = match.group(0)
+
+    return text
+
+
+# =============================================================================
+# Event Extraction
+# =============================================================================
 
 
 def extract_events_from_page(page_text: str, page_num: int, source: str, publication_date: str = None) -> List[Dict]:
     """
     Use LLM to extract structured events from a single newsletter page.
-
-    Args:
-        page_text: Text content from the page
-        page_num: Page number
-        source: Source identifier (filename)
-        publication_date: Newsletter publication date in YYYY-MM-DD format (used to infer exact dates from day names)
     """
     if not config.GEMINI_API_KEY:
         raise ValueError("GEMINI_API_KEY is not configured")
@@ -318,6 +346,7 @@ IMPORTANT DATE CONTEXT:
         except Exception:
             pass
 
+    # NOTE: This prompt must not be modified per user requirements
     prompt = f"""
 You are reading PAGE {page_num} of a community newsletter.
 {date_context}
@@ -372,132 +401,99 @@ Page {page_num} text:
             model=config.GEMINI_MODEL,
             temperature=0,
         )
-        # Check if response is empty
+
         if not text_response:
-            print(f"    ⚠ Empty response from LLM for page {page_num}")
+            log_debug(f"    ⚠ Empty response from LLM for page {page_num}")
             return []
 
-        # Clean up potential code fences
-        if text_response.startswith("```"):
-            text_response = text_response.strip("`").strip()
-            lines = text_response.splitlines()
-            if lines and lines[0].strip().lower() in ("json", "javascript"):
-                text_response = "\n".join(lines[1:]).strip()
+        # Clean JSON in one pass
+        text_response = _clean_llm_json(text_response)
 
-        # Try to extract JSON if it's embedded in text
-        # Look for JSON array pattern
-        json_match = re.search(r"\[[\s\S]*\]", text_response)
-        if json_match:
-            text_response = json_match.group(0)
-
-        # Validate we have something that looks like JSON
-        text_response = text_response.strip()
         if not text_response or not (text_response.startswith("[") or text_response.startswith("{")):
-            print(f"    ⚠ Invalid JSON response format for page {page_num} (response: {text_response[:100]}...)")
+            log_debug(f"    ⚠ Invalid JSON response format for page {page_num}")
             return []
 
         try:
             events = json.loads(text_response)
         except json.JSONDecodeError as json_err:
-            # Try to fix common JSON issues
-            # Remove trailing commas before closing brackets/braces
-            text_response = re.sub(r",\s*([}\]])", r"\1", text_response)
-
-            # Remove control characters (except newlines/tabs in string values which should be escaped)
-            # Replace unescaped control characters with spaces
-            # But we need to be careful - let's try a different approach
-            # Remove control characters that aren't part of valid JSON structure
-            # This regex removes control chars except \n, \r, \t when they're escaped
-            text_response = re.sub(r"[\x00-\x1f\x7f-\x9f]", " ", text_response)
-
-            # Try parsing again
-            try:
-                events = json.loads(text_response)
-            except json.JSONDecodeError:
-                # Last resort: try to extract just the JSON array/object more aggressively
-                # Find the first [ or { and last ] or }
-                start_idx = text_response.find("[")
-                if start_idx == -1:
-                    start_idx = text_response.find("{")
-                if start_idx != -1:
-                    end_idx = text_response.rfind("]")
-                    if end_idx == -1 or end_idx < start_idx:
-                        end_idx = text_response.rfind("}")
-                    if end_idx != -1 and end_idx > start_idx:
-                        text_response = text_response[start_idx : end_idx + 1]
-                        # Clean again
-                        text_response = re.sub(r"[\x00-\x1f\x7f-\x9f]", " ", text_response)
-                        try:
-                            events = json.loads(text_response)
-                        except json.JSONDecodeError:
-                            print(f"    ⚠ JSON parse error for page {page_num}: {json_err}")
-                            print(f"    Response preview: {text_response[:200]}...")
-                            return []
-                else:
-                    print(f"    ⚠ JSON parse error for page {page_num}: {json_err}")
-                    print(f"    Response preview: {text_response[:200]}...")
-                    return []
-
-        if not isinstance(events, list):
-            print(f"    ⚠ Expected list but got {type(events).__name__} for page {page_num}")
+            log_debug(f"    ⚠ JSON parse error for page {page_num}: {json_err}")
             return []
 
-        # Validate and clean events before returning
-        validated_events = []
-        for event in events:
-            if not isinstance(event, dict):
-                continue
+        if not isinstance(events, list):
+            log_debug(f"    ⚠ Expected list but got {type(events).__name__} for page {page_num}")
+            return []
 
-            # Ensure required fields exist
-            if not event.get("event_name"):
-                continue  # Skip events without names
-
-            # Ensure event_date exists (required by database)
-            if not event.get("event_date"):
-                # Try to construct from start_date/end_date or use placeholder
-                event["event_date"] = event.get("start_date") or event.get("end_date") or "no info"
-
-            # Clean string fields (remove extra whitespace)
-            for key in ["event_name", "event_date", "raw_text", "location", "category"]:
-                if key in event and isinstance(event[key], str):
-                    event[key] = event[key].strip()
-
-            # Validate date formats (start_date and end_date should be YYYY-MM-DD or null)
-            for date_key in ["start_date", "end_date"]:
-                if date_key in event and event[date_key]:
-                    date_val = str(event[date_key]).strip()
-                    if date_val.lower() not in ("null", "none", ""):
-                        # Try to validate date format
-                        try:
-                            datetime.strptime(date_val, "%Y-%m-%d")
-                        except ValueError:
-                            # Invalid date format - set to null
-                            event[date_key] = None
-
-            # Validate time formats (should be HH:MM or null)
-            for time_key in ["start_time", "end_time"]:
-                if time_key in event and event[time_key]:
-                    time_val = str(event[time_key]).strip()
-                    if time_val.lower() not in ("null", "none", ""):
-                        # Try to validate time format (HH:MM or HH:MM:SS)
-                        if not re.match(r"^\d{1,2}:\d{2}(:\d{2})?$", time_val):
-                            event[time_key] = None
-
-            # Add source and page info
-            event["source"] = source
-            event["page_number"] = page_num
-
-            validated_events.append(event)
-
-        return validated_events
+        # Validate and clean events
+        return _validate_events(events, source, page_num)
 
     except Exception as e:
-        print(f"    ⚠ Error extracting events from page {page_num}: {e}")
+        log_debug(f"    ⚠ Error extracting events from page {page_num}: {e}")
         return []
 
 
+def _validate_events(events: List[Dict], source: str, page_num: int) -> List[Dict]:
+    """Validate and clean a list of extracted events."""
+    validated = []
+
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+
+        event_name = event.get("event_name", "").strip() if event.get("event_name") else ""
+        if not event_name:
+            continue
+
+        # Ensure event_date exists
+        event_date = event.get("event_date", "").strip() if event.get("event_date") else ""
+        if not event_date:
+            event_date = event.get("start_date") or event.get("end_date") or "no info"
+
+        # Clean string fields
+        cleaned_event = {
+            "event_name": event_name,
+            "event_date": event_date,
+            "raw_text": (event.get("raw_text") or "").strip(),
+            "location": (event.get("location") or "").strip() or None,
+            "category": (event.get("category") or "Other").strip(),
+            "source": source,
+            "page_number": page_num,
+        }
+
+        # Validate date formats
+        for date_key in ["start_date", "end_date"]:
+            date_val = event.get(date_key)
+            if date_val and str(date_val).strip().lower() not in ("null", "none", ""):
+                try:
+                    datetime.strptime(str(date_val).strip(), "%Y-%m-%d")
+                    cleaned_event[date_key] = str(date_val).strip()
+                except ValueError:
+                    cleaned_event[date_key] = None
+            else:
+                cleaned_event[date_key] = None
+
+        # Validate time formats
+        for time_key in ["start_time", "end_time"]:
+            time_val = event.get(time_key)
+            if time_val and str(time_val).strip().lower() not in ("null", "none", ""):
+                if _TIME_PATTERN.match(str(time_val).strip()):
+                    cleaned_event[time_key] = str(time_val).strip()
+                else:
+                    cleaned_event[time_key] = None
+            else:
+                cleaned_event[time_key] = None
+
+        validated.append(cleaned_event)
+
+    return validated
+
+
+# =============================================================================
+# Database Operations (Batched)
+# =============================================================================
+
+
 def insert_events_to_db(events: List[Dict]) -> int:
-    """Insert events into the weekly_events SQL table."""
+    """Insert events into the weekly_events SQL table using batch inserts."""
     if not events:
         return 0
 
@@ -506,7 +502,7 @@ def insert_events_to_db(events: List[Dict]) -> int:
 
     try:
         with conn.cursor() as cur:
-            # Ensure weekly_events table exists
+            # Ensure table exists
             cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS weekly_events (
@@ -525,188 +521,202 @@ def insert_events_to_db(events: List[Dict]) -> int:
             """
             )
 
-            # Check if category column exists, add it if not
+            # Check if category column exists
             cur.execute("SHOW COLUMNS FROM weekly_events LIKE 'category'")
             if not cur.fetchone():
                 try:
-                    print("  ℹ Adding 'category' column to weekly_events table...")
+                    log_debug("  ℹ Adding 'category' column to weekly_events table...")
                     cur.execute("ALTER TABLE weekly_events ADD COLUMN category TEXT")
                 except Exception as e:
-                    print(f"  ⚠ Could not add category column: {e}")
+                    log_debug(f"  ⚠ Could not add category column: {e}")
 
+            # Prepare batch values - filter invalid events upfront
+            values = []
             for event in events:
-                try:
-                    # Validate required fields
-                    event_name = event.get("event_name", "").strip()
-                    event_date = event.get("event_date", "").strip()
+                event_name = (event.get("event_name") or "").strip()
+                if not event_name:
+                    continue
 
-                    # Skip events without required fields
-                    if not event_name:
-                        if config.VERBOSE_LOGGING:
-                            print("    ⚠ Skipping event with no name")
-                        continue
+                event_date = (event.get("event_date") or "").strip()
+                if not event_date:
+                    event_date = event.get("start_date") or event.get("end_date") or "no info"
 
-                    # event_date is required by database - provide default if missing
-                    if not event_date:
-                        # Try to use start_date or end_date as fallback
-                        event_date = event.get("start_date") or event.get("end_date") or ""
-                        if not event_date:
-                            # Last resort: use a placeholder
-                            event_date = "no info"
-
-                    cur.execute(
-                        """
-                        INSERT INTO weekly_events (
-                            source_pdf,
-                            page_number,
-                            event_name,
-                            event_date,
-                            start_date,
-                            end_date,
-                            start_time,
-                            end_time,
-                            raw_text,
-                            category
-                        )
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        """,
-                        (event.get("source", "google_drive_newsletter"), event.get("page_number"), event_name, event_date, event.get("start_date"), event.get("end_date"), event.get("start_time"), event.get("end_time"), event.get("raw_text", ""), event.get("category", "Other")),
+                values.append(
+                    (
+                        event.get("source", "google_drive_newsletter"),
+                        event.get("page_number"),
+                        event_name,
+                        event_date,
+                        event.get("start_date"),
+                        event.get("end_date"),
+                        event.get("start_time"),
+                        event.get("end_time"),
+                        event.get("raw_text", ""),
+                        event.get("category", "Other"),
                     )
-                    inserted_count += 1
-                except Exception as e:
-                    if config.VERBOSE_LOGGING:
-                        print(f"    ⚠ Could not insert event '{event.get('event_name')}': {e}")
+                )
 
-        conn.commit()
+            if values:
+                # Batch insert using executemany
+                cur.executemany(
+                    """
+                    INSERT INTO weekly_events (
+                        source_pdf, page_number, event_name, event_date,
+                        start_date, end_date, start_time, end_time, raw_text, category
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                    values,
+                )
+                inserted_count = len(values)
+
+            conn.commit()
     finally:
         conn.close()
 
     return inserted_count
 
 
+# =============================================================================
+# Newsletter Processing (with concurrent LLM calls)
+# =============================================================================
+
+
+def _process_single_page(args: tuple) -> List[Dict]:
+    """Process a single page - wrapper for concurrent execution."""
+    page_text, page_num, source_name, publication_date = args
+    return extract_events_from_page(page_text, page_num, source_name, publication_date)
+
+
 def process_newsletter_pdf(file_path: Path, file_metadata: Dict) -> Dict:
     """
-    Process a newsletter PDF page by page:
-    1. Extract text from each page
-    2. Use LLM to extract events from each page
-    3. Store events in SQL
-    4. Also create document chunks for the main vector DB
-
-    Returns dict with 'documents' (for vector DB) and 'events' (extracted events)
+    Process a newsletter PDF page by page with concurrent LLM calls.
     """
     source_name = file_metadata.get("name", "unknown")
-    print(f"  📰 Processing newsletter page-by-page: {source_name}")
+    log_debug(f"     Processing newsletter page-by-page: {source_name}")
 
-    # Try to determine publication date from PDF content first (most accurate)
+    # Determine publication date (try multiple sources)
     publication_date = _extract_date_from_pdf_content(file_path)
-
-    # Fallback to filename
     if not publication_date:
         publication_date = _extract_date_from_filename(source_name)
-
-    # Final fallback to file modification date
     if not publication_date:
         try:
             modified_time = file_metadata.get("modifiedTime", "")
             if modified_time:
-                # Parse ISO format datetime and extract date
                 pub_dt = datetime.fromisoformat(modified_time.replace("Z", "+00:00"))
                 publication_date = pub_dt.strftime("%Y-%m-%d")
         except Exception:
             pass
 
     if publication_date:
-        print(f"    📅 Using publication date: {publication_date}")
+        log_debug(f"       Using publication date: {publication_date}")
     else:
-        print("    ⚠ Could not determine publication date - day names may not be converted to exact dates")
+        log_debug("    ⚠ Could not determine publication date")
 
     # Extract pages
     try:
         pages = extract_pages_from_pdf(file_path)
     except Exception as e:
-        print(f"    ⚠ Failed to extract pages: {e}")
+        log_debug(f"    ⚠ Failed to extract pages: {e}")
         return {"documents": [], "events": []}
 
     if not pages:
-        print("    ⚠ No pages extracted from PDF")
+        log_debug("    ⚠ No pages extracted from PDF")
         return {"documents": [], "events": []}
 
-    print(f"    Found {len(pages)} pages")
+    log_debug(f"    Found {len(pages)} pages")
+
+    # Filter pages with content
+    pages_to_process = [(p["text"], p["page_num"], source_name, publication_date) for p in pages if p["text"].strip()]
 
     all_events = []
-    # We no longer add newsletter pages to the vector DB; only extract events for SQL
-    all_documents: List = []
 
-    # Process each page
-    for page_info in pages:
-        page_num = page_info["page_num"]
-        total_pages = page_info["total_pages"]
-        page_text = page_info["text"]
+    # Process pages concurrently (limit workers to avoid rate limiting)
+    max_workers = min(config.LLM_MAX_WORKERS, len(pages_to_process))
 
-        if not page_text.strip():
-            continue
+    if max_workers > 1 and len(pages_to_process) > 1:
+        log_debug(f"      Processing {len(pages_to_process)} pages concurrently (max {max_workers} workers)")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_page = {executor.submit(_process_single_page, args): args[1] for args in pages_to_process}  # args[1] is page_num
 
-        print(f"    📄 Page {page_num}/{total_pages}: ", end="")
+            for future in concurrent.futures.as_completed(future_to_page):
+                page_num = future_to_page[future]
+                try:
+                    events = future.result()
+                    if events:
+                        log_debug(f"    📄 Page {page_num}: found {len(events)} events")
+                        all_events.extend(events)
+                    else:
+                        log_debug(f"    📄 Page {page_num}: no events")
+                except Exception as e:
+                    log_debug(f"    ⚠ Page {page_num} failed: {e}")
+    else:
+        # Sequential processing for single page or single worker
+        for args in pages_to_process:
+            page_text, page_num, src, pub_date = args
+            log_debug(f"    📄 Page {page_num}/{len(pages)}: ", end="")
+            events = extract_events_from_page(page_text, page_num, src, pub_date)
+            if events:
+                log_debug(f"found {len(events)} events")
+                all_events.extend(events)
+            else:
+                log_debug("no events")
 
-        # Extract events from this page using LLM (pass publication date for date inference)
-        events = extract_events_from_page(page_text, page_num, source_name, publication_date=publication_date)
+    log_debug(f"    ✔ Total: {len(all_events)} events extracted")
 
-        if events:
-            print(f"found {len(events)} events")
-            all_events.extend(events)
-        else:
-            print("no events")
+    return {"documents": [], "events": all_events}
 
-        # No vectordb chunks created for newsletters anymore
 
-    print(f"    ✓ Total: {len(all_events)} events, 0 document chunks (vectordb disabled for newsletters)")
+# =============================================================================
+# Vector Database Operations
+# =============================================================================
 
-    return {"documents": all_documents, "events": all_events}
+
+def _get_vectordb_instance(embeddings=None):
+    """Get or create vectordb instance."""
+    if embeddings is None:
+        embeddings = GeminiEmbeddings()
+
+    if config.VECTORDB_DIR.exists():
+        return Chroma(persist_directory=str(config.VECTORDB_DIR), embedding_function=embeddings)
+    return None
 
 
 def add_documents_to_vectordb(documents: List) -> None:
     """Add new documents to the existing vector database."""
     if not documents:
-        print("No documents to add.")
+        log_debug("No documents to add.")
         return
 
     embeddings = GeminiEmbeddings()
 
-    # Load existing vector DB or create new one
     if config.VECTORDB_DIR.exists():
         vectordb = Chroma(persist_directory=str(config.VECTORDB_DIR), embedding_function=embeddings)
-        # Add new documents
         vectordb.add_documents(documents)
-        print(f"✓ Added {len(documents)} new document chunks to existing vector DB.")
+        log_debug(f"✔ Added {len(documents)} new document chunks to existing vector DB.")
     else:
-        # Create new vector DB
         vectordb = Chroma.from_documents(documents=documents, embedding=embeddings, persist_directory=str(config.VECTORDB_DIR))
-        print(f"✓ Created new vector DB with {len(documents)} document chunks.")
+        log_debug(f"✔ Created new vector DB with {len(documents)} document chunks.")
 
 
-def delete_chunks_by_file_id(file_id: str) -> int:
+def delete_chunks_by_file_id(file_id: str, vectordb=None) -> int:
     """Delete all chunks from vector database that belong to a specific Google Drive file ID."""
     if not config.VECTORDB_DIR.exists():
         return 0
 
     try:
-        embeddings = GeminiEmbeddings()
-        vectordb = Chroma(persist_directory=str(config.VECTORDB_DIR), embedding_function=embeddings)
+        if vectordb is None:
+            embeddings = GeminiEmbeddings()
+            vectordb = Chroma(persist_directory=str(config.VECTORDB_DIR), embedding_function=embeddings)
 
-        # Get all document IDs that match this file_id
         results = vectordb.get(where={"drive_file_id": file_id})
 
         if results and results.get("ids") and len(results["ids"]) > 0:
-            # Delete by IDs
             vectordb.delete(ids=results["ids"])
             return len(results["ids"])
-        else:
-            # No chunks found for this file_id
-            return 0
+        return 0
 
     except Exception as e:
-        if config.VERBOSE_LOGGING:
-            print(f"    ⚠ Error deleting chunks for file ID {file_id}: {e}")
+        log_debug(f"    ⚠ Error deleting chunks for file ID {file_id}: {e}")
         return 0
 
 
@@ -732,69 +742,61 @@ def get_all_current_file_ids(service, folder_id: str) -> set:
                 current_file_ids.add(file["id"])
 
     except Exception as e:
-        if config.VERBOSE_LOGGING:
-            print(f"    ⚠ Error getting current file IDs: {e}")
+        log_debug(f"    ⚠ Error getting current file IDs: {e}")
 
     return current_file_ids
 
 
 def remove_deleted_files_from_vectordb(service, folder_id: str, processed_files: dict) -> dict:
-    """
-    Detect files deleted from Google Drive and remove their chunks from vector DB.
-    Returns dict with deletion stats.
-    """
+    """Detect files deleted from Google Drive and remove their chunks from vector DB."""
     deletion_stats = {"files_deleted": 0, "chunks_removed": 0, "errors": []}
 
     if not processed_files:
         return deletion_stats
 
-    print("\nChecking for deleted files in Google Drive...")
+    log_debug("\nChecking for deleted files in Google Drive...")
 
     try:
-        # Get all file IDs currently in Drive
         current_file_ids = get_all_current_file_ids(service, folder_id)
-
-        # Find files that were processed but no longer exist in Drive
         processed_file_ids = set(processed_files.keys())
         deleted_file_ids = processed_file_ids - current_file_ids
 
         if not deleted_file_ids:
-            print("  ✓ No deleted files detected")
+            log_debug("✔ No deleted files detected")
             return deletion_stats
 
-        print(f"  Found {len(deleted_file_ids)} deleted file(s) to remove from vector DB")
+        log_debug(f"  Found {len(deleted_file_ids)} deleted file(s) to remove from vector DB")
 
-        # Delete chunks for each deleted file
+        # Load vectordb once for all deletions
+        vectordb = _get_vectordb_instance()
+
         for file_id in deleted_file_ids:
             file_name = processed_files[file_id].get("name", "unknown")
-            # expected_chunks = processed_files[file_id].get("chunks", 0)
 
             try:
-                print(f"  🗑️  Removing chunks for deleted file: {file_name}")
-                chunks_deleted = delete_chunks_by_file_id(file_id)
+                log_debug(f"  🗑️  Removing chunks for deleted file: {file_name}")
+                chunks_deleted = delete_chunks_by_file_id(file_id, vectordb)
 
                 if chunks_deleted > 0:
-                    print(f"    ✓ Deleted {chunks_deleted} chunk(s)")
+                    log_debug(f"    ✔ Deleted {chunks_deleted} chunk(s)")
                 else:
-                    print("    ⚠ No chunks found to delete (may have been already removed)")
+                    log_debug("    ⚠ No chunks found to delete")
 
-                # Remove from processed_files dict
                 del processed_files[file_id]
-
                 deletion_stats["files_deleted"] += 1
                 deletion_stats["chunks_removed"] += chunks_deleted
 
             except Exception as e:
                 error_msg = f"Error removing chunks for {file_name}: {str(e)}"
-                print(f"    ✗ {error_msg}")
+                log_debug(f"    ✗ {error_msg}")
                 deletion_stats["errors"].append(error_msg)
 
         if deletion_stats["files_deleted"] > 0:
-            print(f"  ✓ Removed {deletion_stats['files_deleted']} deleted file(s) from vector DB")
+            log_debug(f"  ✔ Removed {deletion_stats['files_deleted']} deleted file(s) from vector DB")
 
     except Exception as e:
         error_msg = f"Error detecting deleted files: {str(e)}"
-        print(f"  ✗ {error_msg}")
+        log_debug(f"  ✗ {error_msg}")
         deletion_stats["errors"].append(error_msg)
 
     return deletion_stats
@@ -802,65 +804,61 @@ def remove_deleted_files_from_vectordb(service, folder_id: str, processed_files:
 
 def cleanup_temp_files() -> None:
     """Clean up temporary downloaded files."""
-    for file in config.TEMP_DOWNLOAD_DIR.glob("*"):
-        if file.is_file():
+    for file in config.DATA_DOWNLOAD_DIR.glob("*"):
+        if file.is_file() and not file.name.startswith("."):
             try:
                 file.unlink()
             except Exception:
                 pass
 
 
-def sync_google_drive_to_vectordb() -> dict:
-    """
-    Main function to sync Google Drive files to vector database.
-    For newsletters: extracts events and stores in SQL.
-    Returns summary statistics.
-    """
-    print("=" * 80)
-    print("Starting Google Drive → Vector DB Sync")
-    print("=" * 80)
+# =============================================================================
+# Main Sync Function
+# =============================================================================
 
+
+def sync_google_drive_to_vectordb() -> dict:
+    """Main function to sync Google Drive files to vector database."""
     stats = {"files_processed": 0, "chunks_added": 0, "files_deleted": 0, "chunks_removed": 0, "events_extracted": 0, "events_sql_inserted": 0, "errors": []}
 
     try:
         # Validate configuration
-        errors = config.validate_config()
-        drive_errors = [e for e in errors if "GOOGLE_DRIVE" in e or "Google credentials" in e]
-        if drive_errors:
-            for error in drive_errors:
-                print(f"✗ Configuration error: {error}")
-                stats["errors"].append(error)
-            return stats
+        # errors = config.validate_config()
+        # drive_errors = [e for e in errors if "GOOGLE_DRIVE" in e or "Google credentials" in e]
+        # if drive_errors:
+        #     for error in drive_errors:
+        #         log_debug(f"✗ Configuration error: {error}")
+        #         stats["errors"].append(error)
+        #     return stats
 
         # Load sync state
         state = load_sync_state()
         processed_files = state.get("processed_files", {})
 
         # Get Drive service
-        print("Authenticating with Google Drive...")
+        log_debug("Authenticating with Google Drive...")
         service = get_drive_service()
-        print("✓ Authenticated successfully")
+        log_debug("✔ Authenticated successfully")
 
-        # Check for and remove deleted files from vector DB
+        # Check for and remove deleted files
         deletion_stats = remove_deleted_files_from_vectordb(service, config.GOOGLE_DRIVE_FOLDER_ID, processed_files)
         stats["files_deleted"] = deletion_stats["files_deleted"]
         stats["chunks_removed"] = deletion_stats["chunks_removed"]
         stats["errors"].extend(deletion_stats["errors"])
 
         # List new files
-        print(f"\nScanning folder {config.GOOGLE_DRIVE_FOLDER_ID}...")
+        log_debug(f"\nScanning folder {config.GOOGLE_DRIVE_FOLDER_ID}...")
         new_files = list_new_files_from_drive(service, config.GOOGLE_DRIVE_FOLDER_ID, processed_files)
 
-        print(f"Found {len(new_files)} new or updated files to process.")
-
         if not new_files:
-            print("No new files to process.")
-            # Still save sync state in case files were deleted
+            log_debug("No new files to process.")
             state["processed_files"] = processed_files
             save_sync_state(state)
             if stats["files_deleted"] > 0:
-                print("✓ Sync state updated (deleted files removed)")
+                log_debug("✔ Sync state updated (deleted files removed)")
             return stats
+
+        log_debug(f"Found {len(new_files)} new or updated files to process.")
 
         all_documents = []
         all_events = []
@@ -870,81 +868,76 @@ def sync_google_drive_to_vectordb() -> dict:
             try:
                 folder_cat = file_meta.get("folder_category", "root")
                 file_ext = Path(file_meta["name"]).suffix.lower()
-                print(f"\n[{i}/{len(new_files)}] Processing: {file_meta['name']} (from '{folder_cat}')")
+                log_debug(f"\n[{i}/{len(new_files)}] Processing: {file_meta['name']} (from '{folder_cat}')")
 
                 # Download file
-                local_path = download_file(service, file_meta["id"], file_meta["name"])
-                print(f"  ✓ Downloaded to {local_path.name}")
+                local_path = download_file(service, file_meta["id"], file_meta["name"], file_meta.get("folder_category"))
+                log_debug(f"  ✔ Downloaded to {local_path.name}")
 
-                # Special processing for newsletters (PDFs)
+                # Special processing for newsletters
                 if folder_cat == "newsletters" and file_ext == ".pdf":
-                    # Process newsletter page-by-page with event extraction
                     result = process_newsletter_pdf(local_path, file_meta)
                     documents = result["documents"]
                     events = result["events"]
 
                     all_documents.extend(documents)
                     all_events.extend(events)
-
                     stats["events_extracted"] += len(events)
 
-                    # Mark as processed
                     processed_files[file_meta["id"]] = {"name": file_meta["name"], "folder_category": folder_cat, "modifiedTime": file_meta.get("modifiedTime", ""), "processed_at": datetime.now().isoformat(), "chunks": len(documents), "events": len(events)}
                 else:
                     # Standard processing for non-newsletter files
                     documents = process_file_to_documents(local_path, file_meta)
                     all_documents.extend(documents)
 
-                    # Mark as processed
                     processed_files[file_meta["id"]] = {"name": file_meta["name"], "folder_category": folder_cat, "modifiedTime": file_meta.get("modifiedTime", ""), "processed_at": datetime.now().isoformat(), "chunks": len(documents)}
-
-                    print(f"  ✓ Extracted {len(documents)} chunks")
+                    log_debug(f"  ✔ Extracted {len(documents)} chunks")
 
                 stats["files_processed"] += 1
 
             except Exception as e:
                 error_msg = f"Error processing {file_meta['name']}: {str(e)}"
-                print(f"  ✗ {error_msg}")
+                log_debug(f"  ✗ {error_msg}")
                 stats["errors"].append(error_msg)
 
-        # Add all documents to main vector DB
+        # Add documents to vector DB
         if all_documents:
-            print(f"\nAdding {len(all_documents)} chunks to vector database...")
+            log_debug(f"\nAdding {len(all_documents)} chunks to vector database...")
             add_documents_to_vectordb(all_documents)
             stats["chunks_added"] = len(all_documents)
 
-        # Insert events to SQL database (events are SQL-only, no vector DB)
+        # Insert events to SQL (batched)
         if all_events:
-            print(f"\nInserting {len(all_events)} events into SQL database...")
+            log_debug(f"\nInserting {len(all_events)} events into SQL database...")
             inserted = insert_events_to_db(all_events)
             stats["events_sql_inserted"] = inserted
-            print(f"✓ Inserted {inserted} events to SQL")
+            log_debug(f"✔ Inserted {inserted} events to SQL")
 
-        # Save updated sync state
+        # Save sync state
         state["processed_files"] = processed_files
         save_sync_state(state)
-        print("✓ Sync state saved")
+        log_debug("✔ Sync state saved")
 
         # Cleanup
-        cleanup_temp_files()
-        print("✓ Temporary files cleaned up")
+        # cleanup_temp_files()
+        # log_debug("✔ Temporary files cleaned up")
 
     except Exception as e:
         error_msg = f"Fatal error during sync: {str(e)}"
-        print(f"\n✗ {error_msg}")
+        log_debug(f"\n✗ {error_msg}")
         stats["errors"].append(error_msg)
 
-    print("\n" + "=" * 80)
-    print("Google Drive Sync Complete")
-    print(f"Files processed: {stats['files_processed']}")
-    print(f"Document chunks added: {stats['chunks_added']}")
+    log_debug("\n" + "=" * 80)
+    log_debug("Google Drive Sync Complete")
+    log_debug(f"Files processed: {stats['files_processed']}")
+    log_debug(f"Document chunks added: {stats['chunks_added']}")
     if stats["files_deleted"] > 0:
-        print(f"Files deleted: {stats['files_deleted']}")
-        print(f"Chunks removed: {stats['chunks_removed']}")
-    print(f"Events extracted: {stats['events_extracted']}")
-    print(f"Events inserted (SQL): {stats['events_sql_inserted']}")
-    print(f"Errors: {len(stats['errors'])}")
-    print("=" * 80)
+        log_debug(f"Files deleted: {stats['files_deleted']}")
+        log_debug(f"Chunks removed: {stats['chunks_removed']}")
+    log_debug(f"Events extracted: {stats['events_extracted']}")
+    log_debug(f"Events inserted (SQL): {stats['events_sql_inserted']}")
+    log_debug(f"Errors: {len(stats['errors'])}")
+    log_debug("=" * 80)
 
     return stats
 
@@ -953,8 +946,8 @@ if __name__ == "__main__":
     try:
         sync_google_drive_to_vectordb()
     except KeyboardInterrupt:
-        print("\n\nInterrupted by user. Exiting...")
+        log_debug("\n\nInterrupted by user. Exiting...")
         sys.exit(1)
     except Exception as e:
-        print(f"\n\nFatal error: {e}")
+        log_debug(f"\n\nFatal error: {e}")
         sys.exit(1)

@@ -20,7 +20,7 @@ from pymysql.cursors import DictCursor
 
 # Add parent directory to path to import config
 # Add parent directory to path to import config
-_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+_PROJECT_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(_PROJECT_ROOT))
 
 import config
@@ -39,7 +39,7 @@ MYSQL_CONFIG = {
 def load_config(config_file: Path) -> dict:
     """Load dataset configuration from JSON file."""
     if not config_file.exists():
-        print(f"❌ Config file not found: {config_file}")
+        print(f"✗ Config file not found: {config_file}")
         sys.exit(1)
 
     with open(config_file, "r") as f:
@@ -56,7 +56,7 @@ def reset_database(config_file: Path, recreate: bool = False, sync: bool = False
         sync: If True, sync data after recreating tables
     """
     print("=" * 60)
-    print("🔄 Database Reset Script")
+    print("  Database Reset Script")
     print("=" * 60)
 
     # Load configuration
@@ -76,27 +76,27 @@ def reset_database(config_file: Path, recreate: bool = False, sync: bool = False
     # Connect to MySQL
     try:
         conn = pymysql.connect(**MYSQL_CONFIG, cursorclass=DictCursor, autocommit=False)
-        print(f"✅ Connected to MySQL: {MYSQL_CONFIG['database']}")
+        print(f"✔ Connected to MySQL: {MYSQL_CONFIG['database']}")
     except Exception as e:
-        print(f"❌ MySQL connection failed: {e}")
+        print(f"✗ MySQL connection failed: {e}")
         sys.exit(1)
 
     cursor = conn.cursor()
 
     try:
         # Check which tables exist
-        print("\n📋 Checking existing tables...")
+        print("\n  Checking existing tables...")
         existing_tables = []
         for table in all_tables:
             cursor.execute(f"SHOW TABLES LIKE '{table}'")
             if cursor.fetchone():
                 existing_tables.append(table)
-                print(f"   ✓ Found: {table}")
+                print(f"   ✔ Found: {table}")
 
         if not existing_tables:
-            print("   ℹ️  No tables found to drop")
+            print("   ℹ  No tables found to drop")
             if recreate or sync:
-                print("\n🔄 Creating tables from scratch...")
+                print("\n  Creating tables from scratch...")
             else:
                 conn.close()
                 return
@@ -106,19 +106,19 @@ def reset_database(config_file: Path, recreate: bool = False, sync: bool = False
         for table in existing_tables:
             try:
                 cursor.execute(f"DROP TABLE IF EXISTS `{table}`")
-                print(f"   ✅ Dropped: {table}")
+                print(f"   ✔ Dropped: {table}")
             except Exception as e:
-                print(f"   ❌ Error dropping {table}: {e}")
+                print(f"   ✗ Error dropping {table}: {e}")
                 conn.rollback()
                 raise
 
         conn.commit()
-        print(f"\n✅ Successfully dropped {len(existing_tables)} table(s)")
+        print(f"\n✔ Successfully dropped {len(existing_tables)} table(s)")
 
         # Recreate tables if requested
         if recreate or sync:
             print("\n" + "=" * 60)
-            print("🔄 Recreating Tables and Syncing Data")
+            print("  Recreating Tables and Syncing Data")
             print("=" * 60)
 
             # Import and run the sync
@@ -137,11 +137,11 @@ def reset_database(config_file: Path, recreate: bool = False, sync: bool = False
                     syncer.datasets_config["sync_settings"]["incremental_sync"] = original_incremental
 
         print("\n" + "=" * 60)
-        print("✅ Database reset complete!")
+        print("✔ Database reset complete!")
         print("=" * 60)
 
     except Exception as e:
-        print(f"\n❌ Error during reset: {e}")
+        print(f"\n✗ Error during reset: {e}")
         conn.rollback()
         raise
     finally:
@@ -179,7 +179,7 @@ Examples:
         config_file = Path(__file__).parent / "boston_datasets_config.json"
 
     if not config_file.exists():
-        print(f"❌ Config file not found: {config_file}")
+        print(f"✗ Config file not found: {config_file}")
         sys.exit(1)
 
     # If --sync is used, also recreate
@@ -188,7 +188,7 @@ Examples:
 
     # Confirmation prompt
     if not args.confirm:
-        print("\n⚠️  WARNING: This will DROP ALL TABLES in the database!")
+        print("\n⚠  WARNING: This will DROP ALL TABLES in the database!")
         print(f"   Database: {MYSQL_CONFIG['database']}")
         print(f"   Tables to drop: All tables from {config_file.name}")
 
@@ -201,17 +201,17 @@ Examples:
 
         response = input("\nAre you sure you want to continue? (yes/no): ")
         if response.lower() not in ["yes", "y"]:
-            print("❌ Reset cancelled")
+            print("✗ Reset cancelled")
             sys.exit(0)
 
     # Run reset
     try:
         reset_database(config_file, recreate=args.recreate, sync=args.sync)
     except KeyboardInterrupt:
-        print("\n\n❌ Reset interrupted by user")
+        print("\n\n✗ Reset interrupted by user")
         sys.exit(1)
     except Exception as e:
-        print(f"\n❌ Reset failed: {e}")
+        print(f"\n✗ Reset failed: {e}")
         import traceback
 
         traceback.print_exc()

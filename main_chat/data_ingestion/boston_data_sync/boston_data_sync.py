@@ -25,6 +25,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_PROJECT_ROOT))
 
 import config
+from main_chat.data_ingestion.utils.log_util import log_debug, log_info, log_error, log_success, log_warning
 
 # Check pandas version for datetime parsing compatibility
 _PANDAS_VERSION = tuple(int(x) for x in pd.__version__.split(".")[:2])
@@ -80,8 +81,8 @@ class BostonDataSyncer:
     def _load_config(self) -> Dict:
         """Load dataset configuration from JSON file."""
         if not self.config_file.exists():
-            print(f"⚠️  Config file not found: {self.config_file}")
-            print("   Creating default config file...")
+            log_debug(f"⚠  Config file not found: {self.config_file}")
+            log_debug("   Creating default config file...")
             self._create_default_config()
 
         with open(self.config_file, "r") as f:
@@ -108,17 +109,17 @@ class BostonDataSyncer:
         with open(self.config_file, "w") as f:
             json.dump(default_config, f, indent=2)
 
-        print(f"✅ Created default config: {self.config_file}")
-        print("   Please edit this file to configure your datasets.")
+        log_debug(f"✔ Created default config: {self.config_file}")
+        log_debug("   Please edit this file to configure your datasets.")
 
     def _get_mysql_connection(self):
         """Get MySQL connection, reusing existing if available."""
         if self.mysql_conn is None or not self.mysql_conn.open:
             try:
                 self.mysql_conn = pymysql.connect(**MYSQL_CONFIG, cursorclass=DictCursor, autocommit=False)
-                print(f"✅ Connected to MySQL: {MYSQL_CONFIG['database']}")
+                log_debug(f"✔ Connected to MySQL: {MYSQL_CONFIG['database']}")
             except Exception as e:
-                print(f"❌ MySQL connection failed: {e}")
+                log_debug(f"✗ MySQL connection failed: {e}")
                 raise
         return self.mysql_conn
 
@@ -171,10 +172,10 @@ class BostonDataSyncer:
             return data["result"]["records"]
 
         except requests.exceptions.RequestException as e:
-            print(f"❌ Request failed: {e}")
+            log_debug(f"✗ Request failed: {e}")
             raise
         except Exception as e:
-            print(f"❌ Error fetching data: {e}")
+            log_debug(f"✗ Error fetching data: {e}")
             raise
 
     def fetch_all_records(self, resource_id: str, max_records: Optional[int] = None, filters: Optional[Dict] = None, batch_size: int = 20000, date_field: Optional[str] = None, date_from: Optional[str] = None, date_to: Optional[str] = None) -> pd.DataFrame:
@@ -193,9 +194,9 @@ class BostonDataSyncer:
         Returns:
             DataFrame with all records
         """
-        print(f"📥 Fetching all records from resource {resource_id}...")
+        log_debug(f"   Fetching all records from resource {resource_id}...")
         if date_from or date_to:
-            print(f"   📅 Date range: {date_from or 'start'} to {date_to or 'end'}")
+            log_debug(f"      Date range: {date_from or 'start'} to {date_to or 'end'}")
 
         all_records = []
         offset = 0
@@ -216,7 +217,7 @@ class BostonDataSyncer:
                 all_records.extend(records)
                 total_fetched += len(records)
 
-                print(f"   Fetched {len(records)} records (Total: {total_fetched})")
+                log_debug(f"   Fetched {len(records)} records (Total: {total_fetched})")
 
                 if len(records) < current_limit:
                     break
@@ -227,11 +228,11 @@ class BostonDataSyncer:
                 time.sleep(self.datasets_config["sync_settings"]["rate_limit_delay"])
 
             except Exception as e:
-                print(f"❌ Error during fetch: {e}")
+                log_debug(f"✗ Error during fetch: {e}")
                 break
 
         if not all_records:
-            print("⚠️  No records fetched")
+            log_debug("⚠  No records fetched")
             return pd.DataFrame()
 
         df = pd.DataFrame(all_records)
@@ -265,9 +266,9 @@ class BostonDataSyncer:
 
                 filtered_count = len(df)
                 if original_count != filtered_count:
-                    print(f"   📅 Filtered to {filtered_count:,} records (from {original_count:,})")
+                    log_debug(f"      Filtered to {filtered_count:,} records (from {original_count:,})")
 
-        print(f"✅ Total records fetched: {len(df)}")
+        log_debug(f"✔ Total records fetched: {len(df)}")
         return df
 
     def get_table_schema(self, df: pd.DataFrame, table_name: str, primary_key: str) -> str:
@@ -349,14 +350,14 @@ class BostonDataSyncer:
 
         # Skip placeholder resources
         if resource_id.startswith("PLACEHOLDER"):
-            print(f"\n⏭️  Skipping {name}: Resource ID not yet available")
+            log_debug(f"\n»  Skipping {name}: Resource ID not yet available")
             return {"dataset": name, "records_fetched": 0, "records_inserted": 0, "records_updated": 0, "errors": []}
 
-        print(f"\n{'='*60}")
-        print(f"🔄 Syncing dataset: {name}")
-        print(f"   Table: {table_name}")
-        print(f"   Resource ID: {resource_id}")
-        print(f"{'='*60}")
+        log_debug(f"\n{'='*60}")
+        log_debug(f"   Syncing dataset: {name}")
+        log_debug(f"   Table: {table_name}")
+        log_debug(f"   Resource ID: {resource_id}")
+        log_debug(f"{'='*60}")
 
         stats = {"dataset": name, "records_fetched": 0, "records_inserted": 0, "records_updated": 0, "errors": []}
 
@@ -392,14 +393,14 @@ class BostonDataSyncer:
                         # Add a small buffer (1 day) to catch any updates to existing records
                         sync_from = pd.to_datetime(max_date) - timedelta(days=1)
                         date_from = sync_from.strftime("%Y-%m-%d")
-                        print(f"   📅 Incremental sync: fetching records from {date_from} to {date_to}")
+                        log_debug(f"      Incremental sync: fetching records from {date_from} to {date_to}")
                     else:
-                        print("   📅 Table exists but empty - doing full sync from today back to earliest date")
+                        log_debug("      Table exists but empty - doing full sync from today back to earliest date")
                 except Exception as e:
-                    print(f"   ⚠️  Could not determine last sync date: {e}")
-                    print("   📥 Doing full sync...")
+                    log_debug(f"   ⚠  Could not determine last sync date: {e}")
+                    log_debug("      Doing full sync...")
             else:
-                print(f"   📅 Full sync: fetching all records from today ({date_to}) back to earliest available date")
+                log_debug(f"      Full sync: fetching all records from today ({date_to}) back to earliest available date")
 
             # Fetch data (no max_records limit for full historical sync)
             max_records = self.datasets_config["sync_settings"].get("max_records_per_sync")
@@ -424,7 +425,7 @@ class BostonDataSyncer:
                         df[date_field_normalized] = df[date_field_normalized].dt.tz_localize(None)
 
             if df.empty:
-                print("   ⚠️  No data to sync")
+                log_debug("   ⚠  No data to sync")
                 return stats
 
             stats["records_fetched"] = len(df)
@@ -439,12 +440,12 @@ class BostonDataSyncer:
                 columns_to_drop = [col for col in exclude_normalized if col in df.columns]
                 if columns_to_drop:
                     df.drop(columns=columns_to_drop, inplace=True)
-                    print(f"   🗑️  Excluded columns: {', '.join(columns_to_drop)}")
+                    log_debug(f"       Excluded columns: {', '.join(columns_to_drop)}")
 
             # Apply field mapping if configured (for backward compatibility with API code)
             field_mapping = dataset_config.get("field_mapping", {})
             if field_mapping:
-                print(f"   🔄 Applying field mappings: {field_mapping}")
+                log_debug(f"      Applying field mappings: {field_mapping}")
                 # Normalize mapping keys too
                 normalized_mapping = {}
                 for old_name, new_name in field_mapping.items():
@@ -454,12 +455,12 @@ class BostonDataSyncer:
 
                 # Rename columns
                 df.rename(columns=normalized_mapping, inplace=True)
-                print("   ✅ Field mapping applied")
+                log_debug("   ✔ Field mapping applied")
 
                 # Convert mapped datetime columns using helper function
                 for new_col_name in normalized_mapping.values():
                     if new_col_name in df.columns and ("date" in new_col_name.lower() or "time" in new_col_name.lower() or "_dt" in new_col_name.lower()):
-                        print(f"   📅 Converting {new_col_name} to datetime")
+                        log_debug(f"      Converting {new_col_name} to datetime")
                         df[new_col_name] = parse_datetime_column(df[new_col_name])
                         if pd.api.types.is_datetime64_any_dtype(df[new_col_name]):
                             if df[new_col_name].dt.tz is not None:
@@ -477,7 +478,7 @@ class BostonDataSyncer:
                 table_exists = cursor.fetchone() is not None
 
             if not table_exists:
-                print(f"   📋 Creating table: {table_name}")
+                log_debug(f"      Creating table: {table_name}")
                 create_sql = self.get_table_schema(df, table_name, pk_col)
                 cursor.execute(create_sql)
                 conn.commit()
@@ -485,13 +486,13 @@ class BostonDataSyncer:
                 # Check if primary key column exists
                 cursor.execute(f"SHOW COLUMNS FROM `{table_name}` LIKE '{pk_col}'")
                 if not cursor.fetchone():
-                    print(f"   ⚠️  Primary key column '{pk_col}' not found in existing table")
+                    log_debug(f"   ⚠  Primary key column '{pk_col}' not found in existing table")
                     # Add it if possible
                     try:
                         cursor.execute(f"ALTER TABLE `{table_name}` ADD COLUMN `{pk_col}` VARCHAR(255) PRIMARY KEY FIRST")
                         conn.commit()
                     except Exception as e:
-                        print(f"   ❌ Could not add primary key: {e}")
+                        log_debug(f"   ✗ Could not add primary key: {e}")
 
             # Prepare data for insertion
             # Convert date columns and strip timezone if present, using helper function
@@ -554,25 +555,25 @@ class BostonDataSyncer:
                     cursor.executemany(insert_sql, records)
                     conn.commit()
 
-                    print(f"   ✅ Inserted batch {i//batch_size + 1}/{(len(df)-1)//batch_size + 1} " f"({len(records)} records)")
+                    log_debug(f"   ✔ Inserted batch {i//batch_size + 1}/{(len(df)-1)//batch_size + 1} " f"({len(records)} records)")
 
                 except Exception as e:
                     conn.rollback()
                     error_msg = f"Error inserting batch {i//batch_size + 1}: {e}"
-                    print(f"   ❌ {error_msg}")
+                    log_debug(f"   ✗ {error_msg}")
                     stats["errors"].append(error_msg)
 
             stats["records_inserted"] = total_inserted
             stats["records_updated"] = total_updated
 
-            print("\n   ✅ Sync complete!")
-            print(f"      Fetched: {stats['records_fetched']}")
-            print(f"      Inserted: {stats['records_inserted']}")
-            print(f"      Updated: {stats['records_updated']}")
+            log_debug("\n   ✔ Sync complete!")
+            log_debug(f"      Fetched: {stats['records_fetched']}")
+            log_debug(f"      Inserted: {stats['records_inserted']}")
+            log_debug(f"      Updated: {stats['records_updated']}")
 
         except Exception as e:
             error_msg = f"Error syncing dataset {name}: {e}"
-            print(f"   ❌ {error_msg}")
+            log_debug(f"   ✗ {error_msg}")
             stats["errors"].append(error_msg)
 
         return stats
@@ -602,12 +603,12 @@ class BostonDataSyncer:
             # Check if crime_incident_reports table exists
             cursor.execute("SHOW TABLES LIKE 'crime_incident_reports'")
             if not cursor.fetchone():
-                print("   ⚠️  crime_incident_reports table not found - skipping filtered tables")
+                log_debug("   ⚠  crime_incident_reports table not found - skipping filtered tables")
                 return
 
             # Get actual column names from the table
             columns = self._get_table_columns(cursor, "crime_incident_reports")
-            print(f"   📋 Found {len(columns)} columns in crime_incident_reports")
+            log_debug(f"     Found {len(columns)} columns in crime_incident_reports")
 
             # Check which columns we need exist
             has_offense_code_group = "offense_code_group" in columns
@@ -624,7 +625,7 @@ class BostonDataSyncer:
             has_month = "month" in columns
             has_incident_number = "incident_number" in columns
 
-            # Print missing columns
+            # log_debug missing columns
             missing_cols = []
             if not has_offense_code_group:
                 missing_cols.append("offense_code_group")
@@ -652,16 +653,16 @@ class BostonDataSyncer:
                 missing_cols.append("incident_number")
 
             if missing_cols:
-                print(f"   ⚠️  Missing columns (will use NULL/derived values): {', '.join(missing_cols)}")
+                log_debug(f"   ⚠  Missing columns (will use NULL/derived values): {', '.join(missing_cols)}")
 
             if not has_shooting:
-                print("   ⚠️  'shooting' column not found - cannot create shots_fired_data")
+                log_debug("   ⚠  'shooting' column not found - cannot create shots_fired_data")
                 return
 
-            print("\n   🔫 Creating/updating shots_fired_data table...")
+            log_debug("\n      Creating/updating shots_fired_data table...")
 
             # Create shots_fired_data table matching metadata schema
-            # Based on main_chat/new_metadata/shots_fired_data.json
+            # Based on main_chat/metadata/shots_fired_data.json
             table_columns = [
                 "id INT AUTO_INCREMENT PRIMARY KEY",
                 "object_id INT",
@@ -713,9 +714,9 @@ class BostonDataSyncer:
                 try:
                     cursor.execute("ALTER TABLE shots_fired_data ADD COLUMN coordinates POINT NULL")
                     conn.commit()
-                    print("   ✅ Added coordinates column to shots_fired_data table")
+                    log_debug("   ✔ Added coordinates column to shots_fired_data table")
                 except Exception as e:
-                    print(f"   ⚠️  Could not add coordinates column: {e}")
+                    log_debug(f"   ⚠  Could not add coordinates column: {e}")
             else:
                 # Check if column is NOT NULL and alter it to allow NULL
                 cursor.execute(
@@ -747,26 +748,26 @@ class BostonDataSyncer:
                         idx_name = idx.get("INDEX_NAME") if isinstance(idx, dict) else idx[0]
                         try:
                             cursor.execute(f"ALTER TABLE shots_fired_data DROP INDEX `{idx_name}`")
-                            print(f"   ✅ Dropped spatial index {idx_name} on coordinates column")
+                            log_debug(f"   ✔ Dropped spatial index {idx_name} on coordinates column")
                         except Exception as e:
-                            print(f"   ⚠️  Could not drop spatial index {idx_name}: {e}")
+                            log_debug(f"   ⚠  Could not drop spatial index {idx_name}: {e}")
 
                     # Now modify the column to allow NULL
                     try:
                         cursor.execute("ALTER TABLE shots_fired_data MODIFY COLUMN coordinates POINT NULL")
                         conn.commit()
-                        print("   ✅ Modified coordinates column to allow NULL")
+                        log_debug("   ✔ Modified coordinates column to allow NULL")
                     except Exception as e:
-                        print(f"   ⚠️  Could not modify coordinates column: {e}")
+                        log_debug(f"   ⚠  Could not modify coordinates column: {e}")
                         # If modification fails, drop and recreate the table
-                        print("   🔄 Attempting to drop and recreate table...")
+                        log_debug("      Attempting to drop and recreate table...")
                         try:
                             cursor.execute("DROP TABLE IF EXISTS shots_fired_data")
                             cursor.execute(shots_fired_sql)
                             conn.commit()
-                            print("   ✅ Recreated shots_fired_data table with correct schema")
+                            log_debug("   ✔ Recreated shots_fired_data table with correct schema")
                         except Exception as recreate_error:
-                            print(f"   ❌ Could not recreate table: {recreate_error}")
+                            log_debug(f"   ✗ Could not recreate table: {recreate_error}")
 
             # Build SELECT statement matching metadata schema
             # Map from crime_incident_reports to shots_fired_data schema
@@ -876,7 +877,7 @@ class BostonDataSyncer:
                 null_fields.append("coordinates")
 
             if null_fields:
-                print(f"   ⚠️  Shots fired data - Fields set to NULL: {', '.join(null_fields)}")
+                log_debug(f"   ⚠  Shots fired data - Fields set to NULL: {', '.join(null_fields)}")
 
             insert_columns = [
                 "object_id",
@@ -931,15 +932,15 @@ class BostonDataSyncer:
             """
             cursor.execute(insert_shots_sql)
             shots_count = cursor.rowcount
-            print(f"   ✅ Inserted/updated {shots_count} shots fired records")
+            log_debug(f"   ✔ Inserted/updated {shots_count} shots fired records")
 
             if not has_offense_description:
-                print("   ⚠️  'offense_description' column not found - cannot create homicide_data")
+                log_debug("   ⚠  'offense_description' column not found - cannot create homicide_data")
             else:
-                print("\n   💀 Creating/updating homicide_data table...")
+                log_debug("\n      Creating/updating homicide_data table...")
 
                 # Create homicide_data table matching metadata schema
-                # Based on main_chat/new_metadata/homicide_data.json
+                # Based on main_chat/metadata/homicide_data.json
                 homicide_table_columns = [
                     "id INT AUTO_INCREMENT PRIMARY KEY",
                     "object_id INT",
@@ -1034,7 +1035,7 @@ class BostonDataSyncer:
                 homicide_null_fields.append("ethnicity_nibrs")
 
                 if homicide_null_fields:
-                    print(f"   ⚠️  Homicide data - Fields set to NULL: {', '.join(homicide_null_fields)}")
+                    log_debug(f"   ⚠  Homicide data - Fields set to NULL: {', '.join(homicide_null_fields)}")
 
                 homicide_insert_columns = ["object_id", "reporting_event_number", "ruled_date", "homicide_date", "district", "victim_age", "race", "gender", "weapon", "hour_of_day", "day_of_week", "year", "quarter", "month", "neighborhood", "ethnicity_nibrs"]
 
@@ -1060,40 +1061,35 @@ class BostonDataSyncer:
                 """
                 cursor.execute(insert_homicide_sql)
                 homicide_count = cursor.rowcount
-                print(f"   ✅ Inserted/updated {homicide_count} homicide records")
+                log_debug(f"   ✔ Inserted/updated {homicide_count} homicide records")
 
             conn.commit()
-            print("   ✅ Filtered tables created/updated successfully")
+            log_debug("   ✔ Filtered tables created/updated successfully")
 
         except Exception as e:
-            print(f"   ❌ Error creating filtered tables: {e}")
+            log_debug(f"   ✗ Error creating filtered tables: {e}")
             if conn:
                 conn.rollback()
             import traceback
 
-            traceback.print_exc()
+            traceback.log_debug_exc()
 
     def sync_all(self) -> Dict:
         """Sync all enabled datasets."""
-        print("=" * 60)
-        print("🚀 Boston Open Data Portal → MySQL Sync")
-        print(f"   Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print("=" * 60)
-
         all_stats = {"start_time": datetime.now().isoformat(), "datasets_synced": 0, "total_records": 0, "datasets": []}
 
         incremental = self.datasets_config["sync_settings"].get("incremental_sync", True)
 
         for dataset in self.datasets_config["datasets"]:
             if not dataset.get("enabled", True):
-                print(f"\n⏭️  Skipping disabled dataset: {dataset['name']}")
+                log_debug(f"\n»  Skipping disabled dataset: {dataset['name']}")
                 continue
 
             # Skip datasets with placeholder resource IDs
             if dataset.get("resource_id", "").startswith("PLACEHOLDER"):
-                print(f"\n⏭️  Skipping {dataset['name']}: Resource ID not yet available")
+                log_debug(f"\n»  Skipping {dataset['name']}: Resource ID not yet available")
                 if dataset.get("note"):
-                    print(f"   ℹ️  {dataset['note']}")
+                    log_debug(f"   ℹ  {dataset['note']}")
                 continue
 
             try:
@@ -1106,24 +1102,24 @@ class BostonDataSyncer:
                 # if dataset['name'] == 'crime_incident_reports':
                 #     self.create_filtered_tables_from_crime_data()
             except Exception as e:
-                print(f"❌ Failed to sync {dataset['name']}: {e}")
+                log_debug(f"✗ Failed to sync {dataset['name']}: {e}")
                 all_stats["datasets"].append({"dataset": dataset["name"], "errors": [str(e)]})
 
         all_stats["end_time"] = datetime.now().isoformat()
         duration = datetime.fromisoformat(all_stats["end_time"]) - datetime.fromisoformat(all_stats["start_time"])
         all_stats["duration_seconds"] = duration.total_seconds()
 
-        # Print summary
-        print("\n" + "=" * 60)
-        print("📊 Sync Summary")
-        print("=" * 60)
-        print(f"   Datasets synced: {all_stats['datasets_synced']}")
-        print(f"   Total records: {all_stats['total_records']}")
-        print(f"   Duration: {duration}")
-        print("=" * 60)
+        # log_debug summary
+        log_debug("\n" + "=" * 60)
+        log_debug("   Sync Summary")
+        log_debug("=" * 60)
+        log_debug(f"   Datasets synced: {all_stats['datasets_synced']}")
+        log_debug(f"   Total records: {all_stats['total_records']}")
+        log_debug(f"   Duration: {duration}")
+        log_debug("=" * 60)
 
         # Save sync log
-        log_file = Path(__file__).parent / "boston_sync_log.jsonl"
+        log_file = _PROJECT_ROOT / "logs/boston_sync_log.jsonl"
         with open(log_file, "a") as f:
             f.write(json.dumps(all_stats) + "\n")
 
@@ -1152,17 +1148,17 @@ def main():
 
     with BostonDataSyncer(config_file=args.config) as syncer:
         if args.list_datasets:
-            print("📋 Configured Datasets:")
+            log_debug("  Configured Datasets:")
             for dataset in syncer.datasets_config["datasets"]:
-                status = "✅ Enabled" if dataset.get("enabled", True) else "⏸️  Disabled"
-                print(f"   {status}: {dataset['name']} → {dataset['table_name']}")
+                status = "✔ Enabled" if dataset.get("enabled", True) else "⏸️  Disabled"
+                log_debug(f"   {status}: {dataset['name']} → {dataset['table_name']}")
             return
 
         if args.dataset:
             # Sync single dataset
             dataset = next((d for d in syncer.datasets_config["datasets"] if d["name"] == args.dataset), None)
             if not dataset:
-                print(f"❌ Dataset '{args.dataset}' not found")
+                log_debug(f"✗ Dataset '{args.dataset}' not found")
                 return
             syncer.sync_dataset(dataset, incremental=not args.full)
         else:

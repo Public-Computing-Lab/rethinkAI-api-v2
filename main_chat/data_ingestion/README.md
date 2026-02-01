@@ -10,12 +10,12 @@ Designed to run daily with minimal compute requirements (~$0.02-0.30/month in AP
 
 ## Features
 
-✅ **Incremental sync** - Only processes new/changed files  
-✅ **State tracking** - Remembers what's been processed  
-✅ **Error resilient** - Continues despite individual failures  
-✅ **Low compute** - Uses efficient models and batch operations  
-✅ **Comprehensive logging** - Tracks all runs for monitoring  
-✅ **Hybrid storage** - Best of both SQL and vector DB for different query types  
+✔ **Incremental sync** - Only processes new/changed files  
+✔ **State tracking** - Remembers what's been processed  
+✔ **Error resilient** - Continues despite individual failures  
+✔ **Low compute** - Uses efficient models and batch operations  
+✔ **Comprehensive logging** - Tracks all runs for monitoring  
+✔ **Hybrid storage** - Best of both SQL and vector DB for different query types  
 
 ## Hybrid Storage Architecture
 
@@ -177,7 +177,7 @@ GMAIL_TOKEN_PATH=gmail_token.json
 
 # Paths (defaults are usually fine)
 VECTORDB_DIR=../vectordb_new
-TEMP_DOWNLOAD_DIR=./temp_downloads
+DATA_DOWNLOAD_DIR=./data
 
 # AI Configuration
 GEMINI_API_KEY=your_gemini_api_key
@@ -338,7 +338,7 @@ data_ingestion/
 │   ├── __init__.py
 │   ├── document_processor.py     # Document parsing utilities
 │   └── email_parser.py           # Email parsing utilities
-├── temp_downloads/               # Temporary file downloads
+├── data/                        # Temporary file downloads
 ├── .sync_state.json             # Google Drive sync state
 ├── .email_sync_state.json       # Email sync state
 └── ingestion_log.jsonl          # Run history log
@@ -409,7 +409,6 @@ The system is designed for minimal costs:
 1. Process fewer emails: Lower `EMAIL_LOOKBACK_DAYS`
 2. Limit file processing: Set `MAX_FILES_PER_RUN`
 3. Use cheaper model: `gemini-2.0-flash-exp`
-4. Enable verbose logging only when debugging: `VERBOSE_LOGGING=false`
 
 ## Support
 
@@ -420,7 +419,7 @@ For issues or questions, refer to:
 
 ## Security Notes
 
-⚠️ **Important:**
+⚠ **Important:**
 - Never commit `.env` file to git (it's in `.gitignore`)
 - Keep service account JSON file secure
 - Use app-specific passwords for email (not your main password)
