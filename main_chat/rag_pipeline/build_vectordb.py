@@ -14,7 +14,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_PROJECT_ROOT))
 
 import config
-from main_chat.data_ingestion.utils.log_util import log_debug, log_info, log_error, log_success, log_warning
+from main_chat.data_ingestion.utils.log_util import log_debug, log_info, log_success
 
 # Default input directories (can be overridden by callers)
 DEFAULT_POLICY_DIR = Path("Data/VectorDB_text")
@@ -313,15 +313,16 @@ def build_vectordb(
     all_documents = policy_docs + transcript_docs + newsletter_docs
 
     if not all_documents:
-        log_debug("No documents found to add to vector DB.")
+        log_info("No documents found to add to vector DB.")
         return None
 
-    log_debug(f"\n{'='*80}")
+    log_debug(f"\n{'='*60}")
     log_debug(f"Total documents to add: {len(all_documents)}")
-    log_debug(f"  - Policy chunks: {len(policy_docs)}")
-    log_debug(f"  - Transcript chunks: {len(transcript_docs)}")
-    log_debug(f"  - Newsletter chunks: {len(newsletter_docs)}")
-    log_debug(f"{'='*80}\n")
+    log_debug(f"\n{'='*60}")
+    log_debug(f"  Policy chunks: {len(policy_docs)}")
+    log_debug(f"  Transcript chunks: {len(transcript_docs)}")
+    log_debug(f"  Newsletter chunks: {len(newsletter_docs)}")
+    log_debug(f"{'='*60}\n")
 
     embeddings = GeminiEmbeddings()
 
@@ -340,7 +341,7 @@ def build_vectordb(
             persist_directory=str(vectordb_dir),
         )
 
-    log_debug("Vector database update complete.")
+    log_success("Vector database updated.")
     return vectordb
 
 

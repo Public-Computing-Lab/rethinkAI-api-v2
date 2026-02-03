@@ -24,7 +24,7 @@ sys.path.insert(0, str(_PROJECT_ROOT))
 import config
 import main_chat.sql_pipeline.sql_retrieval as sql_retrieval
 from main_chat.data_ingestion.utils.email_parser import extract_text_from_email, extract_pdf_attachments, get_email_subject, get_email_date
-from main_chat.data_ingestion.utils.log_util import set_verbosity, Verbosity, log, log_error, log_info, log_debug, log_success
+from main_chat.data_ingestion.utils.log_util import log, log_error, log_info, log_debug, log_success, log_warning
 
 # Gmail OAuth scopes - using Gmail API (readonly)
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
@@ -78,7 +78,7 @@ def get_gmail_credentials(interactive: bool = True) -> Credentials:
         try:
             creds = Credentials.from_authorized_user_file(str(token_path), SCOPES)
         except Exception as e:
-            log_debug(f"  ⚠ Could not load existing token: {e}")
+            log_error(f"Could not load existing token: {e}")
 
     # If valid credentials exist, return them
     if creds and creds.valid:
@@ -89,10 +89,10 @@ def get_gmail_credentials(interactive: bool = True) -> Credentials:
         try:
             creds.refresh(Request())
             token_path.write_text(creds.to_json())
-            log_debug("  ✔ Token refreshed successfully")
+            log_debug("✔  Token refreshed successfully")
             return creds
         except Exception as e:
-            log_debug(f"  ⚠ Token refresh failed: {e}")
+            log_error(f"Token refresh failed: {e}")
             creds = None
 
     # No valid credentials - need user interaction
@@ -109,10 +109,10 @@ def get_gmail_credentials(interactive: bool = True) -> Credentials:
         raise AuthenticationRequiredError(auth_url)
 
     # Interactive mode: open browser for user to authorize
-    log_debug("  Opening browser for Gmail authorization...")
+    log_info("Opening browser for Gmail authorization...")
     creds = flow.run_local_server(port=8080, access_type="offline", prompt="consent")
     token_path.write_text(creds.to_json())
-    log_debug("  ✔ Authorization complete, token saved")
+    log_success("Authorization complete, token saved")
     return creds
 
 
@@ -286,7 +286,7 @@ Text:
         return events
 
     except Exception as e:
-        log_debug(f"  ✗ Error extracting events with LLM: {e}")
+        log_error(f"Error extracting events with LLM: {e}")
         return []
 
 
@@ -349,7 +349,7 @@ def insert_events_to_db(events: List[Dict]) -> int:
                     )
                     inserted_count += 1
                 except Exception as e:
-                    log_debug(f"  ⚠ Could not insert event '{event.get('event_name')}': {e}")
+                    log_error(f"Could not insert event '{event.get('event_name')}': {e}")
 
         conn.commit()
     finally:
@@ -391,20 +391,20 @@ def sync_email_newsletters_to_sql(interactive: bool = True) -> dict:
             stats["auth_required"] = True
             stats["auth_url"] = e.auth_url
             error_msg = f"Gmail authentication required. Visit: {e.auth_url}"
-            log_debug(f"⚠ {error_msg}")
+            log_error(f"{error_msg}")
             stats["errors"].append(error_msg)
             return stats
 
-        log_debug("✔ Connected successfully")
+        log_success("Authenticated with Gmail.")
 
         # Get recent newsletters
         log_debug(f"Scanning inbox for newsletters from last {config.EMAIL_LOOKBACK_DAYS} days...")
         newsletters = get_recent_newsletters(service, processed_ids, days_back=config.EMAIL_LOOKBACK_DAYS)
 
-        log_debug(f"Found {len(newsletters)} new newsletters to process.")
+        log_info(f"Found {len(newsletters)} new newsletters to process.")
 
         if not newsletters:
-            log_debug("No new newsletters. Exiting.")
+            log_info("No new newsletters. Exiting.")
             return stats
 
         all_events = []
@@ -422,7 +422,7 @@ def sync_email_newsletters_to_sql(interactive: bool = True) -> dict:
                 except Exception:
                     pub_date = datetime.now().strftime("%Y-%m-%d")
 
-                log_debug(f"\n[{i}/{len(newsletters)}] Processing: {subject[:60]}...")
+                log_debug(f"[{i}/{len(newsletters)}] Processing: {subject[:60]}...")
 
                 email_text = extract_text_from_email(msg)
                 pdf_texts = extract_pdf_attachments(msg)
@@ -430,19 +430,19 @@ def sync_email_newsletters_to_sql(interactive: bool = True) -> dict:
                 full_text = email_text
                 if pdf_texts:
                     full_text += "\n\n" + "\n\n".join(pdf_texts)
-                    log_debug(f"  ✔ Found {len(pdf_texts)} PDF attachment(s)")
+                    log_debug(f"Found {len(pdf_texts)} PDF attachment(s)")
 
                 if not full_text.strip():
-                    log_debug("  ⚠ No text content found")
+                    log_debug("No text content found")
                     continue
 
                 events = extract_events_with_llm(full_text, source=f"Email: {subject}", publication_date=pub_date)
 
                 if events:
-                    log_debug(f"  ✔ Extracted {len(events)} events")
+                    log_debug(f"Extracted {len(events)} events")
                     all_events.extend(events)
                 else:
-                    log_debug("  ⚠ No events found")
+                    log_debug("No events found")
 
                 processed_ids.append(email_id)
                 stats["emails_processed"] += 1
@@ -450,31 +450,32 @@ def sync_email_newsletters_to_sql(interactive: bool = True) -> dict:
 
             except Exception as e:
                 error_msg = f"Error processing email {email_id}: {str(e)}"
-                log_debug(f"  ✗ {error_msg}")
+                log_error(f"{error_msg}")
                 stats["errors"].append(error_msg)
 
         if all_events:
-            log_debug(f"\nInserting {len(all_events)} events into database...")
+            log_debug(f"Inserting {len(all_events)} events into database...")
             inserted = insert_events_to_db(all_events)
             stats["events_inserted"] = inserted
-            log_debug(f"✔ Inserted {inserted} events successfully")
+            log_success(f"Inserted {inserted} events successfully")
 
         state["processed_email_ids"] = processed_ids[-1000:]
         save_email_sync_state(state)
-        log_debug("✔ Sync state saved")
+        log_success("Sync state saved.")
 
     except Exception as e:
         error_msg = f"Fatal error during sync: {str(e)}"
-        log_debug(f"\n✗ {error_msg}")
+        log_error(f"{error_msg}")
         stats["errors"].append(error_msg)
 
-    log_debug("\n" + "=" * 80)
-    log_debug("Email Newsletter Sync Complete")
-    log_debug(f"Emails processed: {stats['emails_processed']}")
-    log_debug(f"Events extracted: {stats['events_extracted']}")
-    log_debug(f"Events inserted (SQL): {stats['events_inserted']}")
-    log_debug(f"Errors: {len(stats['errors'])}")
-    log_debug("=" * 80)
+    log("\n" + "=" * 60)
+    log("   Gmail Sync Summary")
+    log("=" * 60)
+    log(f"     Emails processed: {stats['emails_processed']}")
+    log(f"     Events extracted: {stats['events_extracted']}")
+    log(f"     Events inserted (SQL): {stats['events_inserted']}")
+    log(f"     Errors: {len(stats['errors'])}")
+    log("=" * 60)
 
     return stats
 
@@ -492,19 +493,19 @@ if __name__ == "__main__":
             # Just do authentication
             log_debug("Running Gmail OAuth authentication...")
             get_gmail_credentials(interactive=True)
-            log_debug("✔ Authentication successful! Token saved.")
+            log_success("Authentication successful! Token saved.")
         else:
             # Run full sync
             interactive = not args.non_interactive
             sync_email_newsletters_to_sql(interactive=interactive)
     except KeyboardInterrupt:
-        print("\n\nInterrupted by user. Exiting...")
+        log_warning("Interrupted by user. Exiting...")
         sys.exit(1)
     except AuthenticationRequiredError as e:
-        log_debug(f"\n⚠ Authentication required!")
-        log_debug(f"Visit this URL to authorize: {e.auth_url}")
-        log_debug("\nOr run: python email_to_calendar_sql.py --auth")
+        log_warning(f"Authentication required!")
+        log_info(f"Visit this URL to authorize: {e.auth_url}")
+        log_info("\nOr run: python email_to_calendar_sql.py --auth")
         sys.exit(2)
     except Exception as e:
-        log_debug(f"\n\nFatal error: {e}")
+        log_error(f"Fatal error: {e}")
         sys.exit(1)

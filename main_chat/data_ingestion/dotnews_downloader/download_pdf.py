@@ -12,7 +12,7 @@ from pathlib import Path
 from datetime import datetime, date
 from dateutil.relativedelta import relativedelta
 from typing import Optional
-from dataclasses import dataclass, asdict, field
+from dataclasses import dataclass, field
 from io import BytesIO
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -46,7 +46,7 @@ def extract_date_from_pdf(pdf_content: bytes) -> Optional[date]:
             if month:
                 return date(int(year_str), month, int(day_str))
     except Exception as e:
-        log_debug(f"    Warning: Could not extract date from PDF: {e}")
+        log_warning(f"Could not extract date from PDF: {e}")
     return None
 
 
@@ -86,7 +86,7 @@ class SyncState:
                     # Old format: entire file is {renamed_filename: {...}}
                     # We can't recover original filenames, so start fresh
                     # but keep track of renamed files to avoid reprocessing
-                    log_debug("  Migrating legacy sync state format...")
+                    log_info("Migrating legacy sync state format...")
                     return cls(downloaded_files={}, last_sync=data.get("last_sync"))
 
                 return cls(downloaded_files=data.get("downloaded_files", {}), last_sync=data.get("last_sync"))
@@ -147,13 +147,13 @@ def generate_renamed_filename(extracted_date: Optional[date], year: int, month: 
 def list_pdfs_in_month(year: int, month: int) -> list[tuple[str, str]]:
     """List PDF files in a given month's WP uploads directory."""
     url = f"{DOTNEWS_BASE_URL}{DOTNEWS_WP_UPLOADS_PATH}/{year}/{month:02d}/"
-    log_debug(f"  Checking {url}...")
+    log_success(f"Downloading from {url}...")
 
     try:
         response = requests.get(url, timeout=30)
         response.raise_for_status()
     except requests.RequestException as e:
-        log_debug(f"  Error fetching directory listing: {e}")
+        log_error(f"Error fetching directory listing: {e}")
         return []
 
     pdfs = []
@@ -200,11 +200,11 @@ def download_pdf_content(url: str) -> Optional[bytes]:
         content = response.content
         if not content[:4].startswith(b"%PDF"):
             content_type = response.headers.get("Content-Type", "").lower()
-            log_debug(f"    Error: Content is not a PDF (Content-Type: {content_type})")
+            log_error(f"Content is not a PDF (Content-Type: {content_type})")
             return None
         return content
     except requests.RequestException as e:
-        log_debug(f"    Error downloading: {e}")
+        log_error(f"Error downloading: {e}")
         return None
 
 
@@ -231,9 +231,9 @@ def download_pdfs(output_dir: Optional[Path] = None, start_year: Optional[int] =
     sync_state_path = config.DOTNEWS_SYNC_STATE_FILENAME
     sync_state = SyncState.load(sync_state_path)
 
-    log_debug(f"  Output directory: {output_dir}")
-    log_debug(f"  Date range: {start_year}-{start_month:02d} to {end_year}-{end_month:02d}")
-    log_debug(f"  Previously downloaded: {len(sync_state.downloaded_files)} files")
+    log_debug(f"Output directory: {output_dir}")
+    log_debug(f"Date range: {start_year}-{start_month:02d} to {end_year}-{end_month:02d}")
+    log_debug(f"Previously downloaded: {len(sync_state.downloaded_files)} files")
 
     downloaded_paths = []
     current = date(start_year, start_month, 1)
@@ -252,11 +252,11 @@ def download_pdfs(output_dir: Optional[Path] = None, start_year: Optional[int] =
             for original_filename, pdf_url in pdfs:
                 # Check sync state BEFORE downloading - skip if we've seen this filename
                 if sync_state.is_downloaded(original_filename):
-                    log_debug(f"    Skipping {original_filename} (already downloaded)")
+                    log_debug(f"  Skipping {original_filename} (already downloaded)")
                     continue
 
                 # Only download files we haven't seen before
-                log_debug(f"    Downloading {original_filename}...")
+                log_debug(f"  Downloading {original_filename}...")
                 pdf_content = download_pdf_content(pdf_url)
                 if pdf_content is None:
                     continue
@@ -264,9 +264,9 @@ def download_pdfs(output_dir: Optional[Path] = None, start_year: Optional[int] =
                 # Extract date from PDF content for human-readable filename
                 extracted_date = extract_date_from_pdf(pdf_content)
                 if extracted_date:
-                    log_debug(f"    Extracted date: {extracted_date.isoformat()}")
+                    log_debug(f"  Extracted date: {extracted_date.isoformat()}")
                 else:
-                    log_debug("    Warning: Could not extract date, using fallback")
+                    log_debug("  Could not extract date, using fallback")
 
                 renamed_filename = generate_renamed_filename(extracted_date, year, month)
                 output_path = output_dir / renamed_filename
@@ -274,7 +274,7 @@ def download_pdfs(output_dir: Optional[Path] = None, start_year: Optional[int] =
                 with open(output_path, "wb") as f:
                     f.write(pdf_content)
 
-                log_debug(f"    ✔ Saved as: {output_path.name} ({len(pdf_content) / 1024:.1f} KB)")
+                log_debug(f"  Saved as: {output_path.name} ({len(pdf_content) / 1024:.1f} KB)")
 
                 # Record original filename -> renamed filename mapping
                 sync_state.mark_downloaded(original_filename, renamed_filename)
@@ -283,7 +283,6 @@ def download_pdfs(output_dir: Optional[Path] = None, start_year: Optional[int] =
 
         current += relativedelta(months=1)
 
-    log_debug(f"Download complete. {len(downloaded_paths)} new file(s) downloaded.")
     return downloaded_paths
 
 
@@ -305,7 +304,7 @@ if __name__ == "__main__":
         try:
             start_year, start_month = map(int, args.start.split("-"))
         except ValueError:
-            print(f"Error: Invalid start date format '{args.start}'. Use YYYY-MM.")
+            log_error(f"Error: Invalid start date format '{args.start}'. Use YYYY-MM.")
             sys.exit(1)
 
     end_year, end_month = None, None
@@ -313,13 +312,13 @@ if __name__ == "__main__":
         try:
             end_year, end_month = map(int, args.end.split("-"))
         except ValueError:
-            print(f"Error: Invalid end date format '{args.end}'. Use YYYY-MM.")
+            log_error(f"Error: Invalid end date format '{args.end}'. Use YYYY-MM.")
             sys.exit(1)
 
     output_dir = Path(args.output_dir) if args.output_dir else None
     results = download_pdfs(output_dir=output_dir, start_year=start_year, start_month=start_month, end_year=end_year, end_month=end_month)
 
     if results:
-        log_info(f"Downloaded {len(results)} file(s)")
+        log_success(f"Downloaded {len(results)} new files.")
     else:
-        log_info("No new files downloaded.")
+        log_success("No new files downloaded.")

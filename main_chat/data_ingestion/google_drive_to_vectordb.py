@@ -29,7 +29,7 @@ import config
 from main_chat.rag_pipeline.rag_retrieval import GeminiEmbeddings
 import main_chat.sql_pipeline.sql_retrieval as sql_retrieval
 from main_chat.data_ingestion.utils.document_processor import process_file_to_documents, extract_pages_from_pdf
-from main_chat.data_ingestion.utils.log_util import log_debug, log_info, log_error, log_success, log_warning
+from main_chat.data_ingestion.utils.log_util import log, log_debug, log_info, log_error, log_success, log_warning
 
 # =============================================================================
 # Pre-compiled regex patterns (compiled once at module load)
@@ -177,17 +177,17 @@ def list_new_files_from_drive(service, folder_id: str, processed_files: dict) ->
     root_files = list_files_in_folder(service, folder_id, "root", processed_files)
     all_new_files.extend(root_files)
     if root_files:
-        log_debug(f"  Found {len(root_files)} new files in root folder")
+        log_debug(f"Found {len(root_files)} new files in root folder")
 
     # Scan each subfolder
     subfolders = list_subfolders(service, folder_id)
-    log_debug(f"  Found {len(subfolders)} subfolders: {[f['name'] for f in subfolders]}")
+    log_debug(f"Found {len(subfolders)} subfolders: {[f['name'] for f in subfolders]}")
 
     for subfolder in subfolders:
         subfolder_files = list_files_in_folder(service, subfolder["id"], subfolder["name"], processed_files)
         all_new_files.extend(subfolder_files)
         if subfolder_files:
-            log_debug(f"  Found {len(subfolder_files)} new files in '{subfolder['name']}'")
+            log_debug(f"Found {len(subfolder_files)} new files in '{subfolder['name']}'")
 
     return all_new_files
 
@@ -213,8 +213,8 @@ def download_file(service, file_id: str, file_name: str, folder_category: str = 
             done = False
             while not done:
                 status, done = downloader.next_chunk()
-                if status:
-                    log_debug(f"    Download {int(status.progress() * 100)}%")
+                # if status:
+                #     log_debug(f"  Download {int(status.progress() * 100)}%")
     except Exception as e:
         raise RuntimeError(f"Failed to download file {file_name}: {e}")
 
@@ -253,7 +253,7 @@ def _extract_date_from_pdf_content(file_path: Path) -> Optional[str]:
 
         return None
     except Exception as e:
-        log_debug(f"    ⚠ Could not extract date from PDF content: {e}")
+        log_warning(f"Could not extract date from PDF content: {e}")
         return None
 
 
@@ -403,31 +403,31 @@ Page {page_num} text:
         )
 
         if not text_response:
-            log_debug(f"    ⚠ Empty response from LLM for page {page_num}")
+            log_warning(f"Empty response from LLM for page {page_num}")
             return []
 
         # Clean JSON in one pass
         text_response = _clean_llm_json(text_response)
 
         if not text_response or not (text_response.startswith("[") or text_response.startswith("{")):
-            log_debug(f"    ⚠ Invalid JSON response format for page {page_num}")
+            log_warning(f"Invalid JSON response format for page {page_num}")
             return []
 
         try:
             events = json.loads(text_response)
         except json.JSONDecodeError as json_err:
-            log_debug(f"    ⚠ JSON parse error for page {page_num}: {json_err}")
+            log_warning(f"JSON parse error for page {page_num}: {json_err}")
             return []
 
         if not isinstance(events, list):
-            log_debug(f"    ⚠ Expected list but got {type(events).__name__} for page {page_num}")
+            log_warning(f"Expected list but got {type(events).__name__} for page {page_num}")
             return []
 
         # Validate and clean events
         return _validate_events(events, source, page_num)
 
     except Exception as e:
-        log_debug(f"    ⚠ Error extracting events from page {page_num}: {e}")
+        log_error(f"Error extracting events from page {page_num}: {e}")
         return []
 
 
@@ -525,10 +525,10 @@ def insert_events_to_db(events: List[Dict]) -> int:
             cur.execute("SHOW COLUMNS FROM weekly_events LIKE 'category'")
             if not cur.fetchone():
                 try:
-                    log_debug("  ℹ Adding 'category' column to weekly_events table...")
+                    log_debug("Adding 'category' column to weekly_events table...")
                     cur.execute("ALTER TABLE weekly_events ADD COLUMN category TEXT")
                 except Exception as e:
-                    log_debug(f"  ⚠ Could not add category column: {e}")
+                    log_error(f"Could not add category column: {e}")
 
             # Prepare batch values - filter invalid events upfront
             values = []
@@ -592,7 +592,7 @@ def process_newsletter_pdf(file_path: Path, file_metadata: Dict) -> Dict:
     Process a newsletter PDF page by page with concurrent LLM calls.
     """
     source_name = file_metadata.get("name", "unknown")
-    log_debug(f"     Processing newsletter page-by-page: {source_name}")
+    log_debug(f"Processing newsletter page-by-page: {source_name}")
 
     # Determine publication date (try multiple sources)
     publication_date = _extract_date_from_pdf_content(file_path)
@@ -608,22 +608,22 @@ def process_newsletter_pdf(file_path: Path, file_metadata: Dict) -> Dict:
             pass
 
     if publication_date:
-        log_debug(f"       Using publication date: {publication_date}")
+        log_debug(f"Using publication date: {publication_date}")
     else:
-        log_debug("    ⚠ Could not determine publication date")
+        log_warning("Could not determine publication date")
 
     # Extract pages
     try:
         pages = extract_pages_from_pdf(file_path)
     except Exception as e:
-        log_debug(f"    ⚠ Failed to extract pages: {e}")
+        log_warning(f"Failed to extract pages: {e}")
         return {"documents": [], "events": []}
 
     if not pages:
-        log_debug("    ⚠ No pages extracted from PDF")
+        log_warning("No pages extracted from PDF")
         return {"documents": [], "events": []}
 
-    log_debug(f"    Found {len(pages)} pages")
+    log_debug(f"Found {len(pages)} pages")
 
     # Filter pages with content
     pages_to_process = [(p["text"], p["page_num"], source_name, publication_date) for p in pages if p["text"].strip()]
@@ -634,7 +634,7 @@ def process_newsletter_pdf(file_path: Path, file_metadata: Dict) -> Dict:
     max_workers = min(config.LLM_MAX_WORKERS, len(pages_to_process))
 
     if max_workers > 1 and len(pages_to_process) > 1:
-        log_debug(f"      Processing {len(pages_to_process)} pages concurrently (max {max_workers} workers)")
+        log_debug(f"Processing {len(pages_to_process)} pages concurrently (max {max_workers} workers)")
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_page = {executor.submit(_process_single_page, args): args[1] for args in pages_to_process}  # args[1] is page_num
 
@@ -643,17 +643,17 @@ def process_newsletter_pdf(file_path: Path, file_metadata: Dict) -> Dict:
                 try:
                     events = future.result()
                     if events:
-                        log_debug(f"    📄 Page {page_num}: found {len(events)} events")
+                        log_debug(f"Page {page_num}: found {len(events)} events")
                         all_events.extend(events)
                     else:
-                        log_debug(f"    📄 Page {page_num}: no events")
+                        log_debug(f"Page {page_num}: no events")
                 except Exception as e:
-                    log_debug(f"    ⚠ Page {page_num} failed: {e}")
+                    log_warning(f"Page {page_num} failed: {e}")
     else:
         # Sequential processing for single page or single worker
         for args in pages_to_process:
             page_text, page_num, src, pub_date = args
-            log_debug(f"    📄 Page {page_num}/{len(pages)}: ", end="")
+            log_debug(f"Page {page_num}/{len(pages)}: ", end="")
             events = extract_events_from_page(page_text, page_num, src, pub_date)
             if events:
                 log_debug(f"found {len(events)} events")
@@ -661,7 +661,7 @@ def process_newsletter_pdf(file_path: Path, file_metadata: Dict) -> Dict:
             else:
                 log_debug("no events")
 
-    log_debug(f"    ✔ Total: {len(all_events)} events extracted")
+    log_debug(f"Total: {len(all_events)} events extracted")
 
     return {"documents": [], "events": all_events}
 
@@ -683,8 +683,9 @@ def _get_vectordb_instance(embeddings=None):
 
 def add_documents_to_vectordb(documents: List) -> None:
     """Add new documents to the existing vector database."""
+    log("")
     if not documents:
-        log_debug("No documents to add.")
+        log_info("No documents to add to vector DB.")
         return
 
     embeddings = GeminiEmbeddings()
@@ -692,10 +693,10 @@ def add_documents_to_vectordb(documents: List) -> None:
     if config.VECTORDB_DIR.exists():
         vectordb = Chroma(persist_directory=str(config.VECTORDB_DIR), embedding_function=embeddings)
         vectordb.add_documents(documents)
-        log_debug(f"✔ Added {len(documents)} new document chunks to existing vector DB.")
+        log_success(f"Added {len(documents)} new document chunks to existing vector DB.")
     else:
         vectordb = Chroma.from_documents(documents=documents, embedding=embeddings, persist_directory=str(config.VECTORDB_DIR))
-        log_debug(f"✔ Created new vector DB with {len(documents)} document chunks.")
+        log_success(f"Created new vector DB with {len(documents)} document chunks.")
 
 
 def delete_chunks_by_file_id(file_id: str, vectordb=None) -> int:
@@ -716,7 +717,7 @@ def delete_chunks_by_file_id(file_id: str, vectordb=None) -> int:
         return 0
 
     except Exception as e:
-        log_debug(f"    ⚠ Error deleting chunks for file ID {file_id}: {e}")
+        log_error(f"Error deleting chunks for file ID {file_id}: {e}")
         return 0
 
 
@@ -742,7 +743,7 @@ def get_all_current_file_ids(service, folder_id: str) -> set:
                 current_file_ids.add(file["id"])
 
     except Exception as e:
-        log_debug(f"    ⚠ Error getting current file IDs: {e}")
+        log_error(f"Error getting current file IDs: {e}")
 
     return current_file_ids
 
@@ -754,7 +755,7 @@ def remove_deleted_files_from_vectordb(service, folder_id: str, processed_files:
     if not processed_files:
         return deletion_stats
 
-    log_debug("\nChecking for deleted files in Google Drive...")
+    log_debug("Checking for deleted files in Google Drive...")
 
     try:
         current_file_ids = get_all_current_file_ids(service, folder_id)
@@ -762,10 +763,10 @@ def remove_deleted_files_from_vectordb(service, folder_id: str, processed_files:
         deleted_file_ids = processed_file_ids - current_file_ids
 
         if not deleted_file_ids:
-            log_debug("✔ No deleted files detected")
+            log_debug("   No deleted files detected")
             return deletion_stats
 
-        log_debug(f"  Found {len(deleted_file_ids)} deleted file(s) to remove from vector DB")
+        log_debug(f"Found {len(deleted_file_ids)} deleted file(s) to remove from vector DB")
 
         # Load vectordb once for all deletions
         vectordb = _get_vectordb_instance()
@@ -774,13 +775,13 @@ def remove_deleted_files_from_vectordb(service, folder_id: str, processed_files:
             file_name = processed_files[file_id].get("name", "unknown")
 
             try:
-                log_debug(f"  🗑️  Removing chunks for deleted file: {file_name}")
+                log_debug(f"Removing chunks for deleted file: {file_name}")
                 chunks_deleted = delete_chunks_by_file_id(file_id, vectordb)
 
                 if chunks_deleted > 0:
-                    log_debug(f"    ✔ Deleted {chunks_deleted} chunk(s)")
+                    log_success(f"Deleted {chunks_deleted} chunk(s)")
                 else:
-                    log_debug("    ⚠ No chunks found to delete")
+                    log_warning("No chunks found to delete")
 
                 del processed_files[file_id]
                 deletion_stats["files_deleted"] += 1
@@ -788,15 +789,15 @@ def remove_deleted_files_from_vectordb(service, folder_id: str, processed_files:
 
             except Exception as e:
                 error_msg = f"Error removing chunks for {file_name}: {str(e)}"
-                log_debug(f"    ✗ {error_msg}")
+                log_error(f"{error_msg}")
                 deletion_stats["errors"].append(error_msg)
 
         if deletion_stats["files_deleted"] > 0:
-            log_debug(f"  ✔ Removed {deletion_stats['files_deleted']} deleted file(s) from vector DB")
+            log_success(f"Removed {deletion_stats['files_deleted']} deleted file(s) from vector DB")
 
     except Exception as e:
         error_msg = f"Error detecting deleted files: {str(e)}"
-        log_debug(f"  ✗ {error_msg}")
+        log_debug(f"{error_msg}")
         deletion_stats["errors"].append(error_msg)
 
     return deletion_stats
@@ -836,9 +837,8 @@ def sync_google_drive_to_vectordb() -> dict:
         processed_files = state.get("processed_files", {})
 
         # Get Drive service
-        log_debug("Authenticating with Google Drive...")
         service = get_drive_service()
-        log_debug("✔ Authenticated successfully")
+        log_success("Authenticated with Google Dive.")
 
         # Check for and remove deleted files
         deletion_stats = remove_deleted_files_from_vectordb(service, config.GOOGLE_DRIVE_FOLDER_ID, processed_files)
@@ -847,18 +847,18 @@ def sync_google_drive_to_vectordb() -> dict:
         stats["errors"].extend(deletion_stats["errors"])
 
         # List new files
-        log_debug(f"\nScanning folder {config.GOOGLE_DRIVE_FOLDER_ID}...")
+        log_info(f"Scanning folder {config.GOOGLE_DRIVE_FOLDER_ID}...")
         new_files = list_new_files_from_drive(service, config.GOOGLE_DRIVE_FOLDER_ID, processed_files)
 
         if not new_files:
-            log_debug("No new files to process.")
+            log_success("No new files to process.")
             state["processed_files"] = processed_files
             save_sync_state(state)
             if stats["files_deleted"] > 0:
-                log_debug("✔ Sync state updated (deleted files removed)")
+                log_success("✔  Sync state updated (deleted files removed)")
             return stats
 
-        log_debug(f"Found {len(new_files)} new or updated files to process.")
+        log_info(f"Processing {len(new_files)} new or updated files:")
 
         all_documents = []
         all_events = []
@@ -872,7 +872,7 @@ def sync_google_drive_to_vectordb() -> dict:
 
                 # Download file
                 local_path = download_file(service, file_meta["id"], file_meta["name"], file_meta.get("folder_category"))
-                log_debug(f"  ✔ Downloaded to {local_path.name}")
+                log_debug(f"Downloaded to {local_path.name}")
 
                 # Special processing for newsletters
                 if folder_cat == "newsletters" and file_ext == ".pdf":
@@ -891,53 +891,54 @@ def sync_google_drive_to_vectordb() -> dict:
                     all_documents.extend(documents)
 
                     processed_files[file_meta["id"]] = {"name": file_meta["name"], "folder_category": folder_cat, "modifiedTime": file_meta.get("modifiedTime", ""), "processed_at": datetime.now().isoformat(), "chunks": len(documents)}
-                    log_debug(f"  ✔ Extracted {len(documents)} chunks")
+                    log_success(f"Extracted {len(documents)} chunks")
 
                 stats["files_processed"] += 1
 
             except Exception as e:
                 error_msg = f"Error processing {file_meta['name']}: {str(e)}"
-                log_debug(f"  ✗ {error_msg}")
+                log_error(f"Document processing error: {error_msg}")
                 stats["errors"].append(error_msg)
 
         # Add documents to vector DB
         if all_documents:
-            log_debug(f"\nAdding {len(all_documents)} chunks to vector database...")
+            # log_debug(f"\nAdding {len(all_documents)} chunks to vector database...")
             add_documents_to_vectordb(all_documents)
             stats["chunks_added"] = len(all_documents)
+            # log_success(f"Added {len(all_documents)} chunks to vector DB.")
 
         # Insert events to SQL (batched)
         if all_events:
-            log_debug(f"\nInserting {len(all_events)} events into SQL database...")
+            # log_debug(f"\nInserting {len(all_events)} events into SQL database...")
             inserted = insert_events_to_db(all_events)
             stats["events_sql_inserted"] = inserted
-            log_debug(f"✔ Inserted {inserted} events to SQL")
+            # log_success(f"Inserted {inserted} events to SQL")
 
         # Save sync state
         state["processed_files"] = processed_files
         save_sync_state(state)
-        log_debug("✔ Sync state saved")
+        log_success("Sync state saved")
 
         # Cleanup
         # cleanup_temp_files()
-        # log_debug("✔ Temporary files cleaned up")
+        # log_debug("✔  Temporary files cleaned up")
 
     except Exception as e:
-        error_msg = f"Fatal error during sync: {str(e)}"
-        log_debug(f"\n✗ {error_msg}")
-        stats["errors"].append(error_msg)
+        log_error(f"Fatal error during sync: {str(e)}")
+        stats["errors"].append(str(e))
 
-    log_debug("\n" + "=" * 80)
-    log_debug("Google Drive Sync Complete")
-    log_debug(f"Files processed: {stats['files_processed']}")
-    log_debug(f"Document chunks added: {stats['chunks_added']}")
+    log("\n" + "=" * 60)
+    log("   Google Drive Sync Summary")
+    log("=" * 60)
+    log(f"     Files processed: {stats['files_processed']}")
+    log(f"     Document chunks added: {stats['chunks_added']}")
     if stats["files_deleted"] > 0:
-        log_debug(f"Files deleted: {stats['files_deleted']}")
-        log_debug(f"Chunks removed: {stats['chunks_removed']}")
-    log_debug(f"Events extracted: {stats['events_extracted']}")
-    log_debug(f"Events inserted (SQL): {stats['events_sql_inserted']}")
-    log_debug(f"Errors: {len(stats['errors'])}")
-    log_debug("=" * 80)
+        log(f"     Files deleted: {stats['files_deleted']}")
+        log(f"     Chunks removed: {stats['chunks_removed']}")
+    log(f"     Events extracted: {stats['events_extracted']}")
+    log(f"     Events inserted (SQL): {stats['events_sql_inserted']}")
+    log(f"     Errors: {len(stats['errors'])}")
+    log("=" * 60)
 
     return stats
 
@@ -946,8 +947,8 @@ if __name__ == "__main__":
     try:
         sync_google_drive_to_vectordb()
     except KeyboardInterrupt:
-        log_debug("\n\nInterrupted by user. Exiting...")
+        log_warning("Interrupted by user. Exiting...")
         sys.exit(1)
     except Exception as e:
-        log_debug(f"\n\nFatal error: {e}")
+        log_error(f"Fatal error: {e}")
         sys.exit(1)
