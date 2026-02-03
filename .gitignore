@@ -1,114 +1,88 @@
-# 1️⃣ Python Cache and Bytecode
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-*.cache
-
-# 2️⃣ Virtual Environment (venv)
-venv/
-env/
-*.venv
-pip-log.txt
-pip-delete-this-directory.txt
-conda
-main_chat/rag_pipeline/rags/*
-main_chat/pocEnv/*
-
-# 3️⃣ Environment Variables (SECURITY: Protect API Keys & Secrets)
-.env
-*.env
-.env*
-config.json  # If sensitive configs are stored here
-secrets.json
-
-# 4️⃣ Logs and Databases
-llm_query_log.csv
-*.log
-logs/
-*.sqlite
-*.db
-
-
-
-# 5️⃣ Flask & Gunicorn Deployment Files
-instance/
-*.pid
-*.sock
-gunicorn.log
-gunicorn.error.log
-
-# 6️⃣ IDE and Editor Configurations
+# === IDE / Editor ===
+.nova/
 .vscode/
 .idea/
 *.swp
 *.swo
-*.swn
-*.sublime-workspace
-*.sublime-project
+*.sublime-*
+.flake8
+.vercelignore
 
-# 7️⃣ Jupyter Notebook Checkpoints
-.ipynb_checkpoints/
-
-# 8️⃣ Docker and Build Files (If Used)
-docker-compose.yml
-# Dockerfile
-__docker_temp/
-*.dockerfile
-*.whl
-
-# 9️⃣ System Files (Mac & Windows)
+# === OS Generated ===
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# 1️⃣0️⃣ Node.js & Frontend Build Files (If Applicable)
-node_modules/
-npm-debug.log*
-yarn.lock
-dist/
-build/
-public/config.js
+# === Python ===
+__pycache__/
+*.py[cod]
+*.pyd
+venv/
+.venv/
+*.egg-info/
+pip-log.txt
 
-# 1️⃣1️⃣ Miscellaneous
-*.bak
-*.tmp
-*.log
-gemini_api.key.txt
-cookies.txt
-*.jsonl
-
-# credentails
+# === Environment & Secrets ===
+.env*
+!.env.example
+config.json
+secrets.json
 credentials/*
 !credentials/.gitkeep
 
-# nova
-.nova
+# === Logs & State ===
+logs/*
+!logs/.gitkeep
+*.log
+*.jsonl
+data/.sync*
 
-# exclude data files from data folders
+# === Databases ===
+*.sqlite
+*.sqlite3
+*.db
+
+# === Vector DB (large binary data) ===
+vectordb/
+
+# === Node.js ===
+node_modules/
+npm-debug.log*
+dist/
+build/
+
+# === Data directories (with exceptions) ===
 **/cache/*
 **/data/*
-!experiment-PIT/public/data/map_2.geojson
-!experiment-PIT/public/data/process_311.ts
-!experiment-PIT/public/data/process_911.ts
+!**/cache/.gitkeep
+!**/data/.gitkeep
 api/datastore/*
-main_chat/rag_stuff/data/*
-vectordb_new/*
+!api/datastore/.gitkeep
+data/*
 
-# exception to the rule
-**/cache/.gitkeep
-**/data/.gitkeep
-!api/datastore/.gitkeep 
+# Specific datastore files to keep
+api/datastore/*
+!api/datastore/.gitkeep
 !api/datastore/geocoding-community-assets.csv
 !api/datastore/budget_data_dictionary_v1.txt
 !api/datastore/budget_filtered.txt
 !api/datastore/Imagine Boston 2030 Analysis.txt
 !api/datastore/Boston Slow Streets Plan Analysis.txt
 !api/datastore/Boston Anti-Displacement Plan Analysis.txt
-!api/*.sql
-!setup/*.sql
-main_chat/data/ingestion_log.jsonl
-main_chat/data_ingestion/reset_table.sql
-temp_downloads/
-vectordb/
-data/.sync*
+
+# === Flask / Gunicorn ===
+instance/
+*.pid
+*.sock
+
+# === Jupyter ===
+.ipynb_checkpoints/
+
+# === Build / Temp ===
+*.bak
+*.tmp
+*.whl
+structure.txt
+
+# === Project-specific config (generated at runtime) ===
+public/config.js
