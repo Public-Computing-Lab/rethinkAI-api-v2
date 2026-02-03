@@ -15,7 +15,6 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 import config
-from main_chat.data_ingestion.utils.log_util import log_debug, log_info, log_error, log_success, log_warning
 
 # Optional LangSmith tracing
 try:
@@ -73,7 +72,7 @@ def _get_db_connection():
             autocommit=True,
         )
     except Exception as exc:
-        log_debug(f"MySQL connection failed: {exc}", file=sys.stderr)
+        print(f"MySQL connection failed: {exc}", file=sys.stderr)
         sys.exit(1)
 
     return conn
@@ -130,7 +129,7 @@ def _get_unique_values(table_name: str, column_name: str, schema: str = "public"
             return [row[0] for row in rows]
     except Exception as exc:
         # If query times out or fails, return empty list
-        log_debug(f"[Warning] Could not fetch unique values for {table_name}.{column_name}: {exc}", file=sys.stderr)
+        print(f"[Warning] Could not fetch unique values for {table_name}.{column_name}: {exc}", file=sys.stderr)
         return []
     finally:
         conn.close()
@@ -263,7 +262,7 @@ def _read_metadata_text() -> str:
             data = json.load(f)
         return json.dumps(data, ensure_ascii=False, indent=2)
     except Exception as exc:
-        log_debug(f"Warning: could not read metadata JSON: {exc}", file=sys.stderr)
+        print(f"Warning: could not read metadata JSON: {exc}", file=sys.stderr)
         return ""
 
 
@@ -411,14 +410,7 @@ def _llm_generate_sql(question: str, schema: str, default_model: str, metadata: 
     )
 
     if metadata:
-        user_prompt = (
-            "Schema:\n" + schema + "\n\n"
-            "Additional metadata (JSON):\n" + metadata + "\n\n"
-            "Instruction: Write a single MySQL SELECT to answer the question. "
-            "Always wrap table and column identifiers in backticks. "
-            "If the question is ambiguous, choose a reasonable interpretation.\n\n"
-            f"Question: {question}"
-        )
+        user_prompt = "Schema:\n" + schema + "\n\n" "Additional metadata (JSON):\n" + metadata + "\n\n" "Instruction: Write a single MySQL SELECT to answer the question. " "Always wrap table and column identifiers in backticks. " "If the question is ambiguous, choose a reasonable interpretation.\n\n" f"Question: {question}"
     else:
         user_prompt = "Schema:\n" + schema + "\n\n" "Instruction: Write a single MySQL SELECT to answer the question. " "Always wrap table and column identifiers in backticks. " "If the question is ambiguous, choose a reasonable interpretation.\n\n" f"Question: {question}"
 
@@ -571,15 +563,15 @@ def _execute_with_retries(
     for attempt_idx in range(1, max_attempts + 1):
         try:
             if attempt_idx == 1:
-                log_debug("\n[SQL]\n" + sql + "\n")
+                print("\n[SQL]\n" + sql + "\n")
             else:
-                log_debug(f"\n[SQL Retry {attempt_idx - 1}]\n" + sql + "\n")
+                print(f"\n[SQL Retry {attempt_idx - 1}]\n" + sql + "\n")
 
             # Normalize SQL for comparison (remove extra whitespace)
             sql_normalized = " ".join(sql.split())
             if sql_normalized in previous_sqls:
                 # Same SQL as before - avoid infinite loop, return early
-                log_debug("\n[Warning] SQL same as previous attempt, stopping to avoid infinite loop\n")
+                print("\n[Warning] SQL same as previous attempt, stopping to avoid infinite loop\n")
                 result = {"columns": [], "rows": []}
                 return {"result": result, "sql": sql}
 
@@ -664,7 +656,7 @@ def _execute_with_retries(
 
             # On second attempt with no rows, return early to avoid expensive retries
             if attempt_idx >= 2:
-                log_debug(f"\n[Info] After {attempt_idx} attempts with no rows, stopping to avoid delays\n")
+                print(f"\n[Info] After {attempt_idx} attempts with no rows, stopping to avoid delays\n")
                 return {"result": result, "sql": sql}
 
             # Build error text with unique values info (only on first retry)
@@ -710,10 +702,10 @@ def _execute_with_retries(
                                     uvals = col_info.get("unique_values", [])
                                     if uvals and len(uvals) <= 150:
                                         error_parts.append(f"\n\nMetadata unique_values for `{col_name}` (first 20): {', '.join(str(v)[:50] for v in uvals[:20])}")
-                                        log_debug(f"[Debug] Injected {len(uvals)} unique_values for column `{col_name}`", file=sys.stderr)
+                                        print(f"[Debug] Injected {len(uvals)} unique_values for column `{col_name}`", file=sys.stderr)
                             break
             except Exception as e:
-                log_debug(f"[Debug] Exception extracting metadata unique_values: {e}", file=sys.stderr)
+                print(f"[Debug] Exception extracting metadata unique_values: {e}", file=sys.stderr)
 
             sql = _llm_refine_sql(
                 question=question,
@@ -728,7 +720,7 @@ def _execute_with_retries(
             err_text = str(exc)
             if attempt_idx == max_attempts:
                 # On final failure, return a structured error result instead of raising
-                log_debug(f"\n[Error] SQL failed after {attempt_idx} attempts: {err_text}\n", file=sys.stderr)
+                print(f"\n[Error] SQL failed after {attempt_idx} attempts: {err_text}\n", file=sys.stderr)
                 error_result = {"columns": [], "rows": [], "error": err_text}
                 return {"result": error_result, "sql": sql}
 
@@ -738,7 +730,7 @@ def _execute_with_retries(
 
             # If we've seen this exact error 2+ times, stop to avoid infinite loop
             if error_count[error_key] >= 2:
-                log_debug(f"\n[Warning] Same error repeated {error_count[error_key]} times, stopping to avoid infinite loop\n")
+                print(f"\n[Warning] Same error repeated {error_count[error_key]} times, stopping to avoid infinite loop\n")
                 result = {"columns": [], "rows": []}
                 return {"result": result, "sql": sql}
 
@@ -763,7 +755,7 @@ def _execute_with_retries(
                 # If refinement itself fails, stop after 2 attempts and return error
                 if attempt_idx >= 2 and last_err is not None:
                     err_text = str(last_err)
-                    log_debug(f"\n[Error] SQL refinement failed after {attempt_idx} attempts: {err_text}\n", file=sys.stderr)
+                    print(f"\n[Error] SQL refinement failed after {attempt_idx} attempts: {err_text}\n", file=sys.stderr)
                     error_result = {"columns": [], "rows": [], "error": err_text}
                     return {"result": error_result, "sql": sql}
                 continue
@@ -856,31 +848,31 @@ def _llm_generate_answer(question: str, sql: str, result: Dict[str, Any], defaul
         return "\n".join(lines)
 
 
-def _log_debug_schema(database: str) -> None:
-    log_debug("=== Database schema (tables/columns) ===")
-    log_debug(_fetch_schema_snapshot(database))
+def _print_schema(database: str) -> None:
+    print("=== Database schema (tables/columns) ===")
+    print(_fetch_schema_snapshot(database))
 
 
-# Pretty-log_debug a sample of the SQL result rows
-def _log_debug_result(result: Dict[str, Any]) -> None:
+# Pretty-print a sample of the SQL result rows
+def _print_result(result: Dict[str, Any]) -> None:
     try:
         cols = result.get("columns", []) if isinstance(result, dict) else []
         rows = result.get("rows", []) if isinstance(result, dict) else []
-        log_debug("[Result] rows=", len(rows))
+        print("[Result] rows=", len(rows))
         if not cols or not rows:
             return
         header = " | ".join(str(c) for c in cols)
-        log_debug(header)
-        log_debug("-" * len(header))
+        print(header)
+        print("-" * len(header))
         max_rows = 30
         for r in rows[:max_rows]:
             line = " | ".join(str(r.get(c, "")) for c in cols)
-            log_debug(line)
+            print(line)
         if len(rows) > max_rows:
-            log_debug(f"... ({len(rows) - max_rows} more rows)")
+            print(f"... ({len(rows) - max_rows} more rows)")
     except Exception:
         try:
-            log_debug(json.dumps(result, ensure_ascii=False, default=str)[:4000])
+            print(json.dumps(result, ensure_ascii=False, default=str)[:4000])
         except Exception:
             pass
 
@@ -911,7 +903,7 @@ class GenerateSQLNode(Node):
 
     def post(self, shared, prep_res, exec_res):
         shared["sql"] = exec_res
-        log_debug("\n[SQL]\n" + exec_res + "\n")
+        print("\n[SQL]\n" + exec_res + "\n")
         return "default"
 
 
@@ -936,7 +928,7 @@ class RunSQLNode(Node):
         shared["result"] = exec_res["result"]
         # Ensure shared SQL reflects the possibly refined SQL
         shared["sql"] = exec_res.get("sql", prep_res.get("sql"))
-        _log_debug_result(shared["result"])  # show SQL call return
+        _print_result(shared["result"])  # show SQL call return
         return "default"
 
 
@@ -953,7 +945,7 @@ class SummarizeNode(Node):
 
     def post(self, shared, prep_res, exec_res):
         shared["answer"] = exec_res
-        log_debug("[Answer]\n" + exec_res + "\n")
+        print("[Answer]\n" + exec_res + "\n")
         return None
 
 
@@ -975,19 +967,19 @@ def _run_pipeline_fallback(shared: Dict[str, Any]) -> None:
     )
     shared["sql"] = exec_out["sql"]
     shared["result"] = exec_out["result"]
-    _log_debug_result(shared["result"])  # show SQL call return (fallback)
+    _print_result(shared["result"])  # show SQL call return (fallback)
     answer = _llm_generate_answer(question, shared["sql"], shared["result"], config.GEMINI_SUMMARY_MODEL)
     shared["answer"] = answer
-    log_debug("[Answer]\n" + answer + "\n", flush=True)
+    print("[Answer]\n" + answer + "\n", flush=True)
 
 
 def _interactive_loop() -> None:
     if not (config.GEMINI_API_KEY):
-        log_debug("GEMINI_API_KEY not configured", file=sys.stderr)
+        print("GEMINI_API_KEY not configured", file=sys.stderr)
         sys.exit(1)
 
     database = config.PGSCHEMA
-    _log_debug_schema(database)
+    _print_schema(database)
 
     get_schema = GetSchemaNode()
     gen_sql = GenerateSQLNode()
@@ -997,12 +989,12 @@ def _interactive_loop() -> None:
     flow = Flow().start(get_schema)
     get_schema >> gen_sql >> run_sql >> summarize
 
-    log_debug("\nType a question to query the database (or 'exit' to quit).\n")
+    print("\nType a question to query the database (or 'exit' to quit).\n")
     while True:
         try:
             prompt = input("Question> ").strip()
         except (EOFError, KeyboardInterrupt):
-            log_debug()
+            print()
             break
         if not prompt:
             continue
@@ -1019,7 +1011,7 @@ def _interactive_loop() -> None:
             else:
                 flow.run(shared)
         except Exception as exc:
-            log_debug(f"Error while running flow: {exc}", file=sys.stderr)
+            print(f"Error while running flow: {exc}", file=sys.stderr)
         # Fallback if no answer was produced
         if not shared.get("answer"):
             _run_pipeline_fallback(shared)
@@ -1029,7 +1021,7 @@ def main() -> None:
     if len(sys.argv) > 1:
         question = " ".join(sys.argv[1:])
         if not (config.GEMINI_API_KEY):
-            log_debug("GEMINI_API_KEY not configured", file=sys.stderr)
+            print("GEMINI_API_KEY not configured", file=sys.stderr)
             sys.exit(1)
 
         database = config.PGSCHEMA
@@ -1051,7 +1043,7 @@ def main() -> None:
             else:
                 flow.run(shared)
         except Exception as exc:
-            log_debug(f"Error while running flow: {exc}", file=sys.stderr)
+            print(f"Error while running flow: {exc}", file=sys.stderr)
         if not shared.get("answer"):
             _run_pipeline_fallback(shared)
     else:
