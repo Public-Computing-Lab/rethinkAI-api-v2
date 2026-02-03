@@ -44,34 +44,34 @@ def log(message: str, level: Verbosity = Verbosity.NORMAL) -> None:
             print(message)
 
 
+def log_msg(message: str) -> None:
+    """Always log errors (level QUIET)."""
+    log(f"{message}", Verbosity.QUIET)
+
+
 def log_error(message: str) -> None:
     """Always log errors (level QUIET)."""
-    log(f"✗ {message}", Verbosity.QUIET)
+    log(f"✗  {message}", Verbosity.QUIET)
 
 
 def log_warning(message: str) -> None:
     """Log warnings at NORMAL level."""
-    log(f"⚠ {message}", Verbosity.NORMAL)
+    log(f"⚠  {message}", Verbosity.NORMAL)
 
 
 def log_success(message: str) -> None:
     """Log success messages at NORMAL level."""
-    log(f"✔ {message}", Verbosity.NORMAL)
+    log(f"✔  {message}", Verbosity.NORMAL)
 
 
 def log_info(message: str) -> None:
     """Log info messages at NORMAL level."""
-    log(message, Verbosity.NORMAL)
+    log(f"ℹ  {message}", Verbosity.NORMAL)
 
 
 def log_debug(message: str) -> None:
     """Log debug/progress messages at VERBOSE level."""
-    log(message, Verbosity.VERBOSE)
-
-
-def log_progress(message: str) -> None:
-    """Log progress messages at VERBOSE level (alias for log_debug)."""
-    log(message, Verbosity.VERBOSE)
+    log(f"   {message}", Verbosity.VERBOSE)
 
 
 @contextmanager

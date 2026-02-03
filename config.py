@@ -13,6 +13,8 @@ _ENV_FILE = PROJECT_ROOT / ".env"
 if _ENV_FILE.exists():
     load_dotenv(_ENV_FILE)
 
+from main_chat.data_ingestion.utils.log_util import log, log_error, log_info, log_success, log_warning
+
 # ============================================================================
 # Environment Detection
 # ============================================================================
@@ -113,7 +115,7 @@ if DATA_DOWNLOAD_DIR and str(DATA_DOWNLOAD_DIR) != ".":
     try:
         DATA_DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
     except Exception as e:
-        print(f"Warning: Could not create DATA_DOWNLOAD_DIR '{DATA_DOWNLOAD_DIR}': {e}")
+        log_error(f"Could not create DATA_DOWNLOAD_DIR '{DATA_DOWNLOAD_DIR}': {e}")
 
 SYNC_STATE_FILE = DATA_DOWNLOAD_DIR / ".sync_state_gdrive.json"
 EMAIL_SYNC_STATE_FILE = DATA_DOWNLOAD_DIR / ".sync_state_gmail.json"
@@ -258,7 +260,7 @@ def get_response_text(response):
     if hasattr(response, "candidates") and response.candidates:
         if response.candidates[0].content.parts:
             return response.candidates[0].content.parts[0].text
-        print("Warning: Empty model response")
+        log_warning("Empty model response")
     return ""
 
 
@@ -310,7 +312,7 @@ def validate_config(test_connections: bool = True) -> list:
             if not path.exists():
                 try:
                     path.mkdir(parents=True, exist_ok=True)
-                    print(f"  ✔ Created {name}: {path}")
+                    log_success(f"Created {name}: {path}")
                 except Exception as e:
                     errors.append(f"Cannot create {name} '{path}': {e}")
             elif not os.access(path, os.W_OK):
@@ -322,7 +324,7 @@ def validate_config(test_connections: bool = True) -> list:
 
     # Test connections (if requested)
     if test_connections:
-        print("Testing connections...")
+        log_info("Testing connections...")
 
         # Test Google Drive connection
         gdrive_error = _test_google_drive_connection()
@@ -349,9 +351,9 @@ def validate_config(test_connections: bool = True) -> list:
 
     # Print warnings (non-fatal)
     if warnings:
-        print("\n⚠  Configuration Warnings:")
+        log_warning("Configuration Warnings:")
         for warning in warnings:
-            print(f"  - {warning}")
+            log_warning(f"  {warning}")
 
     return errors
 
@@ -373,7 +375,7 @@ def _test_google_drive_connection() -> Optional[str]:
         # Try to get folder metadata (validates both auth and folder access)
         folder = service.files().get(fileId=GOOGLE_DRIVE_FOLDER_ID, fields="id, name").execute()
 
-        print(f"  ✔ Google Drive: Connected to folder '{folder.get('name', 'unknown')}'")
+        log_success(f"Google Drive: Connected to folder '{folder.get('name', 'unknown')}'")
         return None
 
     except ImportError:
@@ -415,7 +417,7 @@ def _test_gmail_connection() -> Optional[str]:
                 # Save refreshed token
                 with open(GMAIL_TOKEN_PATH, "w") as token_file:
                     token_file.write(creds.to_json())
-                print("  ℹ Gmail: Token refreshed")
+                log_info("Gmail: Token refreshed")
             except Exception as refresh_error:
                 return f"AUTH_REQUIRED: Token expired and refresh failed: {refresh_error}"
         elif creds.expired:
@@ -426,7 +428,7 @@ def _test_gmail_connection() -> Optional[str]:
         profile = service.users().getProfile(userId="me").execute()
         email = profile.get("emailAddress", "unknown")
 
-        print(f"  ✔ Gmail: Connected as {email}")
+        log_success(f"Gmail: Connected as {email}")
         return None
 
     except ImportError:
@@ -457,7 +459,7 @@ def _test_mysql_connection() -> Optional[str]:
             cursor.fetchone()
 
         conn.close()
-        print(f"  ✔ MySQL: Connected to {MYSQL_HOST}/{MYSQL_DB}")
+        log_success(f"MySQL: Connected to {MYSQL_HOST}/{MYSQL_DB}")
         return None
 
     except ImportError:
@@ -494,7 +496,7 @@ def _test_gemini_connection() -> Optional[str]:
                 text = response.candidates[0].content.parts[0].text.strip().lower()
 
             if text:
-                print(f"  ✔ Gemini API: Model '{GEMINI_MODEL}' responded with: {text}")
+                log_success(f"Gemini API: Model '{GEMINI_MODEL}' responded with: {text}\n")
                 return None
             else:
                 return "API responded but returned empty content"
@@ -515,7 +517,7 @@ def _test_gemini_connection() -> Optional[str]:
             return f"API key doesn't have permission for model '{GEMINI_MODEL}'"
         elif "RESOURCE_EXHAUSTED" in error_msg or "429" in error_msg:
             # Rate limited means the key works!
-            print("  ✔ Gemini API: Key valid (rate limited, but working)")
+            log_success("Gemini API: Key valid (rate limited, but working)")
             return None
         elif "not found" in error_msg.lower() or "404" in error_msg:
             return f"Model '{GEMINI_MODEL}' not found - check model name"
@@ -526,46 +528,39 @@ def _test_gemini_connection() -> Optional[str]:
 
 
 def print_config_summary(test_connections: bool = False):
-    print("=" * 80)
-    print(f"Configuration Summary  [ENVIRONMENT: {ENVIRONMENT.upper()}]")
-    print("=" * 80)
-    print(f"Base Path: {BASE_PATH}")
-    print()
-    print("Database:")
-    print(f"  MySQL Host: {MYSQL_HOST}:{MYSQL_PORT}")
-    print(f"  MySQL DB: {MYSQL_DB}")
-    print(f"  MySQL User: {MYSQL_USER}")
-    print()
-    print("AI/LLM:")
-    print(f"  Gemini Model: {GEMINI_MODEL}")
-    print(f"  Gemini Embed Model: {GEMINI_EMBED_MODEL}")
-    print(f"  Gemini API Key: {'*' * 10}...{GEMINI_API_KEY[-4:] if GEMINI_API_KEY else 'NOT SET'}")
-    print()
-    print("Google Services:")
-    print(f"  Drive Folder ID: {GOOGLE_DRIVE_FOLDER_ID or 'NOT SET'}")
-    print(f"  Drive Credentials: {GOOGLE_CREDENTIALS_PATH}")
-    print(f"  Gmail Credentials: {GMAIL_CREDENTIALS_PATH}")
-    print(f"  Gmail Token: {GMAIL_TOKEN_PATH} {'✔' if GMAIL_TOKEN_PATH and GMAIL_TOKEN_PATH.exists() else '(not found)'}")
-    print()
-    print("Directories:")
-    print(f"  Vector DB: {VECTORDB_DIR}")
-    print(f"  Data Downloads: {DATA_DOWNLOAD_DIR}")
-    print()
-    print(f"Processing: LLM Max Workers = {LLM_MAX_WORKERS}")
-    print("=" * 80)
+    log("=" * 80)
+    log(f"Configuration Summary  [ENVIRONMENT: {ENVIRONMENT.upper()}]")
+    log("=" * 80)
+    log(f"Base Path: {BASE_PATH}\n")
+    log("Database:")
+    log(f"  MySQL Host: {MYSQL_HOST}:{MYSQL_PORT}")
+    log(f"  MySQL DB: {MYSQL_DB}")
+    log(f"  MySQL User: {MYSQL_USER}\n")
+    log("AI/LLM:")
+    log(f"  Gemini Model: {GEMINI_MODEL}")
+    log(f"  Gemini Embed Model: {GEMINI_EMBED_MODEL}")
+    log(f"  Gemini API Key: {'*' * 10}...{GEMINI_API_KEY[-4:] if GEMINI_API_KEY else 'NOT SET'}\n")
+    log(f"  Processing: LLM Max Workers = {LLM_MAX_WORKERS}")
+    log("Google Services:")
+    log(f"  Drive Folder ID: {GOOGLE_DRIVE_FOLDER_ID or 'NOT SET'}")
+    log(f"  Drive Credentials: {GOOGLE_CREDENTIALS_PATH}")
+    log(f"  Gmail Credentials: {GMAIL_CREDENTIALS_PATH}")
+    log(f"  Gmail Token: {GMAIL_TOKEN_PATH} {'✔' if GMAIL_TOKEN_PATH and GMAIL_TOKEN_PATH.exists() else '(not found)'}\n")
+    log("Directories:")
+    log(f"  Vector DB: {VECTORDB_DIR}")
+    log(f"  Data Downloads: {DATA_DOWNLOAD_DIR}\n")
+    log("=" * 80)
 
     errors = validate_config(test_connections=test_connections)
 
     if errors:
-        print("\n✗ Configuration Errors:")
+        log_error("Configuration Errors:")
         for error in errors:
-            print(f"  - {error}")
-        print()
+            log_error(f"  {error}")
     else:
-        print("\n✔ Configuration valid!")
+        log_success("Configuration valid!")
         if test_connections:
-            print("   All connections successful.")
-    print()
+            log_success("All connections successful.")
 
     return len(errors) == 0
 
