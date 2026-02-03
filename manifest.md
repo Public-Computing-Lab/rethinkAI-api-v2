@@ -2,9 +2,9 @@
 
 ## Context Summary
 - Project: RethinkAI Dorchester community assistant combining SQL, RAG, and hybrid LLM routing.
-- Key code: `main_chat/main_chat.py` (routing + cache), `api/api.py` (Flask API v2.0), static frontends `public/` (prod-style) and `test_frontend/` (tester UI).
-- Data: MySQL tables (311/911/events) and Chroma-style vector DB in `main_chat/vectordb_new`. Ingestion lives in `main_chat/data_ingestion/`.
-- Auth: API key header `RethinkAI-API-Key` is required; default sample key `banana`.
+- Key code: `main_chat/main_chat.py` (routing + cache), `api/api.py` (Flask API v2.0), static frontends `public/` (prod-style)
+- Data: MySQL tables (311/911/events) and Chroma-style vector DB in `main_chat/vectordb`. Ingestion lives in `main_chat/data_ingestion/`.
+- Auth: API key header `RethinkAI-API-Key` is required
 
 ## Architecture
 - **Client**: Vanilla HTML/CSS/JS frontends (`public`) call REST API at `http://127.0.0.1:8888` with API key; show chat, events, API tester.
@@ -21,12 +21,11 @@
 - Core logic: `main_chat/chat_route.py` (env bootstrap, vectordb path fix, LLM client setup, routing, cache mgmt, history reuse).
 - Data ingestion: `main_chat/data_ingestion/` (Google Drive/email sync, DB setup, vector rebuild) — not part of runtime API but seeds data.
 - Frontends: `public/` (production-like static UI); configurable `API_BASE_URL` and `API_KEY` in JS.
-- Prompts/config: `api/prompts/`, `.env` at repo root (copy from `example_env.txt`).
 
 ## Dependencies (runtime highlights)
 - Python 3.11+, Flask 3.x, mysql-connector-python, google-genai, dotenv, pandas/numpy, plotly/dash (legacy), httpx/requests.
 - MySQL 8.x for structured data.
-- Vector store: Chroma-style files under `main_chat/vectordb_new`.
+- Vector store: Chroma-style files under `main_chat/vectordb`.
 - Frontend: vanilla JS/CSS, served via `python -m http.server` (no build).
 
 ## Data Flow
@@ -69,7 +68,5 @@
 - Document schema for 311/911 tables in `dataset-documentation/` and link from API docs.
 
 ## Assorted Notes
-- Frontend default API key `'banana'` must match `.env` `RETHINKAI_API_KEYS`.
-- `api/api.py` and `/data/query` legacy endpoints are deprecated; prefer `api.py`.
 - LLM defaults to `gemini-2.5-flash-lite`; override via env `GEMINI_MODEL`.
 
