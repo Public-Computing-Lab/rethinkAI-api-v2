@@ -6,7 +6,7 @@
 set -e  # Exit on error
 
 # Configuration
-PROJECT_DIR="$HOME/source/Spark-F25"
+PROJECT_DIR="$HOME/source/RethinkAI_v2"
 VENV_DIR="$PROJECT_DIR/venv"
 INGESTION_DIR="$PROJECT_DIR/main_chat/data_ingestion"
 LOG_DIR="$PROJECT_DIR/logs"
