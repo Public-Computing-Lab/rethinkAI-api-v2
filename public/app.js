@@ -157,7 +157,7 @@ async function updateApiStatus() {
 
     if (data.status === 'ok') {
       elements.apiStatus.classList.add('connected');
-      if (text) text.textContent = 'Connected';
+      if (text) text.textContent = '';
     } else {
       elements.apiStatus.classList.add('error');
       if (text) text.textContent = 'Degraded';
@@ -413,6 +413,11 @@ async function loadEvents() {
         setEventsLoading(false);
         return;
       }
+      
+      if (elements.eventsEmpty) {
+        elements.eventsEmpty.hidden = true;
+        elements.eventsEmpty.style.display = 'none';
+      }
 
       data.events.forEach(event => {
         const card = document.createElement('div');
@@ -507,6 +512,107 @@ function initEvents() {
 
 function initSidebar() {
   // Sidebar is always visible now, no toggle functionality needed
+  const dateEl = document.getElementById('sidebar-date');
+  if (!dateEl) return;
+  
+  const today = new Date();
+  const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+  const formatted = today.toLocaleDateString('en-US', options);
+  
+  dateEl.textContent = `Today is ${formatted}`;
+}
+
+// ============================================================================
+// Theme Functions
+// ============================================================================
+
+function initTheme() {
+  const toggle = document.getElementById('theme-toggle');
+  const icon = document.getElementById('theme-icon');
+  const text = document.getElementById('theme-text');
+  
+  if (!toggle) return;
+
+  // Check for saved preference, then system preference
+  const savedTheme = localStorage.getItem('theme');
+  const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const initialTheme = savedTheme || (systemPrefersDark ? 'dark' : 'light');
+  
+  setTheme(initialTheme);
+
+  toggle.addEventListener('click', () => {
+    const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+    setTheme(newTheme);
+    localStorage.setItem('theme', newTheme);
+  });
+
+  // Listen for system theme changes
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+    if (!localStorage.getItem('theme')) {
+      setTheme(e.matches ? 'dark' : 'light');
+    }
+  });
+}
+
+function setTheme(theme) {
+  const icon = document.getElementById('theme-icon');
+  const text = document.getElementById('theme-text');
+  
+  document.documentElement.setAttribute('data-theme', theme);
+  
+  if (icon) icon.textContent = theme === 'dark' ? '☾' : '☀';
+  //if (text) text.textContent = theme === 'dark' ? 'Dark' : 'Light';
+}
+
+// ============================================================================
+// Font Size Accessibility
+// ============================================================================
+
+const FONT_SIZES = ['small', 'medium', 'large', 'x-large'];
+const FONT_SIZE_LABELS = { 'small': 'S', 'medium': 'M', 'large': 'L', 'x-large': 'XL' };
+
+function initFontSize() {
+  const decreaseBtn = document.getElementById('font-decrease');
+  const increaseBtn = document.getElementById('font-increase');  
+  
+  if (!decreaseBtn || !increaseBtn) return;
+
+  // Load saved preference or default to medium
+  const savedSize = localStorage.getItem('fontSize') || 'medium';
+  setFontSize(savedSize);
+
+  decreaseBtn.addEventListener('click', () => {
+    const current = document.documentElement.getAttribute('data-font-size') || 'medium';
+    const currentIndex = FONT_SIZES.indexOf(current);
+    if (currentIndex > 0) {
+      const newSize = FONT_SIZES[currentIndex - 1];
+      setFontSize(newSize);
+      localStorage.setItem('fontSize', newSize);
+    }
+  });
+
+  increaseBtn.addEventListener('click', () => {
+    const current = document.documentElement.getAttribute('data-font-size') || 'medium';
+    const currentIndex = FONT_SIZES.indexOf(current);
+    if (currentIndex < FONT_SIZES.length - 1) {
+      const newSize = FONT_SIZES[currentIndex + 1];
+      setFontSize(newSize);
+      localStorage.setItem('fontSize', newSize);
+    }
+  });
+}
+
+function setFontSize(size) {
+  const decreaseBtn = document.getElementById('font-decrease');
+  const increaseBtn = document.getElementById('font-increase');
+  
+  document.documentElement.setAttribute('data-font-size', size);
+  
+  // Update button states
+  const currentIndex = FONT_SIZES.indexOf(size);
+  if (decreaseBtn) decreaseBtn.disabled = currentIndex === 0;
+  if (increaseBtn) increaseBtn.disabled = currentIndex === FONT_SIZES.length - 1;
 }
 
 // ============================================================================
@@ -519,7 +625,9 @@ function initApp() {
     console.error('Required DOM elements not found');
     return;
   }
-
+  
+  initTheme();
+  initFontSize();
   initChat();
   initEvents();
   initSidebar();

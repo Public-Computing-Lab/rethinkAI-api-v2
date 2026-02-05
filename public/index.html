@@ -32,7 +32,18 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  
+  <script>
+    // Prevent flash of wrong theme/font size on load
+    (function() {
+      const savedTheme = localStorage.getItem('theme');
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const theme = savedTheme || (prefersDark ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-theme', theme);
+      
+      const savedFontSize = localStorage.getItem('fontSize') || 'medium';
+      document.documentElement.setAttribute('data-font-size', savedFontSize);
+    })();
+  </script>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -54,6 +65,7 @@
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-header">
         <h2>Upcoming Events</h2>
+        <p id="sidebar-date">Today is today </p>
       </div>
       
       <div class="sidebar-filters">
@@ -101,12 +113,22 @@
             <div class="logo-icon">🏡</div>
             <div class="logo-text">
               <h1>On The Porch</h1>
-              <p>Dorchester Decoded v0.2.2</p>
+              <p>Dorchester Decoded v0.2.3</p>
             </div>
           </div>
         </div>
         
         <div class="header-right">
+          <div class="font-size-control" role="group" aria-label="Font size controls">
+            <button class="font-size-btn" id="font-decrease" aria-label="Decrease font size">A</button>            
+            <button class="font-size-btn" id="font-increase" aria-label="Increase font size">A</button>
+          </div>
+          
+          <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
+            <span class="theme-toggle-icon" id="theme-icon"></span>
+            <!-- <span class="theme-toggle-text" id="theme-text">Dark</span> -->
+          </button>
+          
           <div class="status-indicator" id="api-status">
             <span class="status-dot"></span>
             <span class="status-text">Checking...</span>
