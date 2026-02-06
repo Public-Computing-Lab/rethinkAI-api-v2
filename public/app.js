@@ -157,13 +157,15 @@ async function updateApiStatus() {
 
     if (data.status === 'ok') {
       elements.apiStatus.classList.add('connected');
-      if (text) text.textContent = '';
+      // Hidden via CSS when connected
     } else {
+      elements.apiStatus.style.display = '';
       elements.apiStatus.classList.add('error');
       if (text) text.textContent = 'Degraded';
     }
   } catch (error) {
     elements.apiStatus.className = 'status-indicator error';
+    elements.apiStatus.style.display = '';
     if (text) text.textContent = 'Offline';
   }
 }
@@ -341,7 +343,7 @@ async function handleChatSubmit(e) {
     if (typingEl && typingEl.parentNode) {
       typingEl.remove();
     }
-    showError(elements.chatError, 'Could not connect to the API. Make sure the server is running.');
+    showError(elements.chatError, 'Error connecting to the service.');
   } finally {
     setChatLoading(false);
     if (elements.chatInput) elements.chatInput.focus();
@@ -413,7 +415,7 @@ async function loadEvents() {
         setEventsLoading(false);
         return;
       }
-      
+
       if (elements.eventsEmpty) {
         elements.eventsEmpty.hidden = true;
         elements.eventsEmpty.style.display = 'none';
@@ -484,7 +486,7 @@ async function loadEvents() {
       setEventsLoading(false);
     }
   } catch (error) {
-    showError(elements.eventsError, 'Could not connect to API. Please check your connection.');
+    showError(elements.eventsError, 'Error connecting to the service.');
     setEventsLoading(false);
   }
 }
@@ -514,11 +516,11 @@ function initSidebar() {
   // Sidebar is always visible now, no toggle functionality needed
   const dateEl = document.getElementById('sidebar-date');
   if (!dateEl) return;
-  
+
   const today = new Date();
   const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
   const formatted = today.toLocaleDateString('en-US', options);
-  
+
   dateEl.textContent = `Today is ${formatted}`;
 }
 
@@ -527,24 +529,28 @@ function initSidebar() {
 // ============================================================================
 
 function initTheme() {
-  const toggle = document.getElementById('theme-toggle');
-  const icon = document.getElementById('theme-icon');
-  const text = document.getElementById('theme-text');
-  
-  if (!toggle) return;
+  // Get all toggle buttons (desktop and mobile)
+  const toggles = [
+    document.getElementById('theme-toggle'),
+    document.getElementById('theme-toggle-mobile')
+  ].filter(Boolean);
+
+  if (toggles.length === 0) return;
 
   // Check for saved preference, then system preference
   const savedTheme = localStorage.getItem('theme');
   const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
   const initialTheme = savedTheme || (systemPrefersDark ? 'dark' : 'light');
-  
+
   setTheme(initialTheme);
 
-  toggle.addEventListener('click', () => {
-    const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
-    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-    setTheme(newTheme);
-    localStorage.setItem('theme', newTheme);
+  toggles.forEach(toggle => {
+    toggle.addEventListener('click', () => {
+      const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+      const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+      setTheme(newTheme);
+      localStorage.setItem('theme', newTheme);
+    });
   });
 
   // Listen for system theme changes
@@ -556,13 +562,21 @@ function initTheme() {
 }
 
 function setTheme(theme) {
-  const icon = document.getElementById('theme-icon');
-  const text = document.getElementById('theme-text');
-  
+  // Update all icon/text elements (desktop and mobile)
+  const icons = ['theme-icon', 'theme-icon-mobile'];
+  const texts = ['theme-text', 'theme-text-mobile'];
+
   document.documentElement.setAttribute('data-theme', theme);
-  
-  if (icon) icon.textContent = theme === 'dark' ? '☾' : '☀';
-  //if (text) text.textContent = theme === 'dark' ? 'Dark' : 'Light';
+
+  icons.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = theme === 'dark' ? '☾' : '☀';
+  });
+
+  texts.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = theme === 'dark' ? 'Dark' : 'Light';
+  });
 }
 
 // ============================================================================
@@ -573,46 +587,125 @@ const FONT_SIZES = ['small', 'medium', 'large', 'x-large'];
 const FONT_SIZE_LABELS = { 'small': 'S', 'medium': 'M', 'large': 'L', 'x-large': 'XL' };
 
 function initFontSize() {
+  // Desktop buttons
   const decreaseBtn = document.getElementById('font-decrease');
-  const increaseBtn = document.getElementById('font-increase');  
-  
-  if (!decreaseBtn || !increaseBtn) return;
+  const increaseBtn = document.getElementById('font-increase');
+
+  // Mobile buttons (use data-action attribute)
+  const mobileDecrease = document.querySelector('.settings-popover .font-size-btn[data-action="decrease"]');
+  const mobileIncrease = document.querySelector('.settings-popover .font-size-btn[data-action="increase"]');
 
   // Load saved preference or default to medium
   const savedSize = localStorage.getItem('fontSize') || 'medium';
   setFontSize(savedSize);
 
-  decreaseBtn.addEventListener('click', () => {
-    const current = document.documentElement.getAttribute('data-font-size') || 'medium';
-    const currentIndex = FONT_SIZES.indexOf(current);
-    if (currentIndex > 0) {
-      const newSize = FONT_SIZES[currentIndex - 1];
-      setFontSize(newSize);
-      localStorage.setItem('fontSize', newSize);
+  // Desktop handlers
+  if (decreaseBtn) {
+    decreaseBtn.addEventListener('click', () => changeFontSize(-1));
+  }
+  if (increaseBtn) {
+    increaseBtn.addEventListener('click', () => changeFontSize(1));
+  }
+
+  // Mobile handlers
+  if (mobileDecrease) {
+    mobileDecrease.addEventListener('click', () => changeFontSize(-1));
+  }
+  if (mobileIncrease) {
+    mobileIncrease.addEventListener('click', () => changeFontSize(1));
+  }
+}
+
+function changeFontSize(direction) {
+  const current = document.documentElement.getAttribute('data-font-size') || 'medium';
+  const currentIndex = FONT_SIZES.indexOf(current);
+  const newIndex = currentIndex + direction;
+
+  if (newIndex >= 0 && newIndex < FONT_SIZES.length) {
+    const newSize = FONT_SIZES[newIndex];
+    setFontSize(newSize);
+    localStorage.setItem('fontSize', newSize);
+  }
+}
+
+function setFontSize(size) {
+  // Update all labels (desktop and mobile)
+  const labels = ['font-size-label', 'font-size-label-mobile'];
+
+  document.documentElement.setAttribute('data-font-size', size);
+
+  labels.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = FONT_SIZE_LABELS[size];
+  });
+
+  // Update button states for both desktop and mobile
+  const currentIndex = FONT_SIZES.indexOf(size);
+
+  // Desktop
+  const decreaseBtn = document.getElementById('font-decrease');
+  const increaseBtn = document.getElementById('font-increase');
+  if (decreaseBtn) decreaseBtn.disabled = currentIndex === 0;
+  if (increaseBtn) increaseBtn.disabled = currentIndex === FONT_SIZES.length - 1;
+
+  // Mobile
+  const mobileDecrease = document.querySelector('.settings-popover .font-size-btn[data-action="decrease"]');
+  const mobileIncrease = document.querySelector('.settings-popover .font-size-btn[data-action="increase"]');
+  if (mobileDecrease) mobileDecrease.disabled = currentIndex === 0;
+  if (mobileIncrease) mobileIncrease.disabled = currentIndex === FONT_SIZES.length - 1;
+}
+
+// ============================================================================
+// Settings Popover (Mobile)
+// ============================================================================
+
+function initSettingsPopover() {
+  const btn = document.getElementById('settings-btn');
+  const popover = document.getElementById('settings-popover');
+
+  if (!btn || !popover) return;
+
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isOpen = !popover.hidden;
+
+    if (isOpen) {
+      closeSettingsPopover();
+    } else {
+      openSettingsPopover();
     }
   });
 
-  increaseBtn.addEventListener('click', () => {
-    const current = document.documentElement.getAttribute('data-font-size') || 'medium';
-    const currentIndex = FONT_SIZES.indexOf(current);
-    if (currentIndex < FONT_SIZES.length - 1) {
-      const newSize = FONT_SIZES[currentIndex + 1];
-      setFontSize(newSize);
-      localStorage.setItem('fontSize', newSize);
+  // Close when clicking outside
+  document.addEventListener('click', (e) => {
+    if (!popover.hidden && !popover.contains(e.target) && e.target !== btn) {
+      closeSettingsPopover();
+    }
+  });
+
+  // Close on escape key
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !popover.hidden) {
+      closeSettingsPopover();
+      btn.focus();
     }
   });
 }
 
-function setFontSize(size) {
-  const decreaseBtn = document.getElementById('font-decrease');
-  const increaseBtn = document.getElementById('font-increase');
-  
-  document.documentElement.setAttribute('data-font-size', size);
-  
-  // Update button states
-  const currentIndex = FONT_SIZES.indexOf(size);
-  if (decreaseBtn) decreaseBtn.disabled = currentIndex === 0;
-  if (increaseBtn) increaseBtn.disabled = currentIndex === FONT_SIZES.length - 1;
+function openSettingsPopover() {
+  const btn = document.getElementById('settings-btn');
+  const popover = document.getElementById('settings-popover');
+
+  popover.hidden = false;
+  btn.setAttribute('aria-expanded', 'true');
+}
+
+function closeSettingsPopover() {
+  const btn = document.getElementById('settings-btn');
+  const popover = document.getElementById('settings-popover');
+
+  popover.hidden = true;
+  btn.setAttribute('aria-expanded', 'false');
 }
 
 // ============================================================================
@@ -625,9 +718,10 @@ function initApp() {
     console.error('Required DOM elements not found');
     return;
   }
-  
+
   initTheme();
   initFontSize();
+  initSettingsPopover();
   initChat();
   initEvents();
   initSidebar();

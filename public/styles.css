@@ -47,7 +47,7 @@
   --transition-smooth: 300ms cubic-bezier(0.4, 0, 0.2, 1);
 
   /* Mobile tabs height */
-  --mobile-tabs-height: 56px;
+  --mobile-tabs-height: 40px;
 }
 
 /* ============================================================================
@@ -178,7 +178,8 @@
   border-radius: 20px;
 }
 
-.font-size-btn {
+.font-size-btn,
+.font-size-btn-pop {
   width: 15px;
   height: 20px;
   display: flex;
@@ -195,28 +196,31 @@
   font-family: inherit;
 }
 
-.font-size-btn:hover {
+.font-size-btn:hover,
+.font-size-btn-pop:hover {
   /* background: var(--bg-hover);
   color: var(--accent-primary); */
   font-weight: 900;
   transform: scale(1.25);
 }
 
-.font-size-btn:active {
+.font-size-btn:active,
+.font-size-btn-pop:active {
   transform: scale(0.90);
 }
 
-.font-size-btn:disabled {
+.font-size-btn:disabled,
+.font-size-btn-pop:disabled {
   opacity: 0.3;
   cursor: not-allowed;
 }
 
-#font-decrease{
+.font-size-smaller {
   font-size: 10px;
-  
+
 }
 
-/* .font-size-label {
+.font-size-label {
   font-size: 11px;
   font-weight: 500;
   color: var(--text-muted);
@@ -224,13 +228,15 @@
   text-align: center;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-} */
+  margin-left: 20px;
+  margin-right: 20px;
+}
 
 /* Hide label on smaller screens */
-@media (max-width: 600px) {
+/* @media (max-width: 600px) {
   .font-size-label {
     display: none;
-  }
+  } */
 }
 
 /* ============================================================================
@@ -343,6 +349,164 @@
 }
 
 /* ============================================================================
+   Desktop/Mobile Controls Toggle
+   ============================================================================ */
+.desktop-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.mobile-settings {
+  display: none;
+  position: relative;
+}
+
+/* ============================================================================
+   Settings Button (Mobile)
+   ============================================================================ */
+.settings-btn {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.settings-btn:hover {
+  border-color: var(--accent-primary);
+  background: var(--bg-hover);
+}
+
+.settings-btn[aria-expanded="true"] {
+  border-color: var(--accent-primary);
+  background: var(--bg-hover);
+}
+
+/* .settings-icon {
+  margin-top:-1px;
+  margin-left:1px;
+  font-size: 24px;
+  line-height: 1;
+  color: var(--text-secondary);
+  transition: transform var(--transition-smooth);
+}
+
+.settings-btn[aria-expanded="true"] .settings-icon {
+  transform: rotate(90deg);
+} */
+
+.settings-icon {
+  width: 18px;
+  height: 18px;
+  transition: transform var(--transition-smooth);
+}
+
+.settings-btn[aria-expanded="true"] .settings-icon {
+  transform: rotate(90deg);
+}
+
+.settings-btn:hover .settings-icon {
+  transform: rotate(45deg);
+}
+
+.settings-btn[aria-expanded="true"]:hover .settings-icon {
+  transform: rotate(135deg);
+}
+
+/* ============================================================================
+   Settings Popover
+   ============================================================================ */
+.settings-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 220px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  z-index: 1000;
+  overflow: hidden;
+  animation: popoverIn 0.2s ease;
+}
+
+.settings-popover[hidden] {
+  display: none;
+}
+
+@keyframes popoverIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.95);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.settings-popover-header {
+  padding: 12px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+}
+
+.settings-group {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.settings-group:last-child {
+  border-bottom: none;
+}
+
+.settings-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+/* Make controls full-width in popover */
+.settings-popover .font-size-control,
+.settings-popover .theme-toggle {
+  width: 100%;
+  height: 28px;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+.settings-popover .theme-toggle-text {
+  display: inline;
+}
+
+/* ============================================================================
+   Responsive: Show/Hide Controls
+   ============================================================================ */
+@media (max-width: 600px) {
+  .desktop-controls {
+    display: none;
+  }
+
+  .mobile-settings {
+    display: block;
+  }
+}
+
+/* ============================================================================
    Reset & Base
    ============================================================================ */
 * {
@@ -393,14 +557,14 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 2px;
   background: none;
   border: none;
   color: var(--text-muted);
   font-family: inherit;
   cursor: pointer;
   transition: all var(--transition);
-  padding: 8px;
+  padding: 4px;
   position: relative;
 }
 
@@ -430,12 +594,12 @@ body {
 }
 
 .tab-icon {
-  font-size: 20px;
+  font-size: 16px;
   line-height: 1;
 }
 
 .tab-label {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -680,6 +844,10 @@ body {
   border: 1px solid var(--border-color);
   border-radius: 20px;
   font-size: 13px;
+}
+
+.status-indicator.connected {
+  display: none;
 }
 
 .status-dot {
@@ -1166,7 +1334,12 @@ body {
 
   /* Adjust chat input area */
   .chat-input-container {
-    padding-bottom: calc(16px + var(--mobile-tabs-height));
+    padding-bottom: calc(4px + var(--mobile-tabs-height));
+  }
+
+  /* Hide the chat suggestions in mobile */
+  .suggestions {
+    display: none;
   }
 
   .logo-icon {

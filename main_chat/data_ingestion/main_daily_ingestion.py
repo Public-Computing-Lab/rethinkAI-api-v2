@@ -30,8 +30,12 @@ def sync_dotnews_newsletters() -> dict:
         dotnews_dir.mkdir(parents=True, exist_ok=True)
 
         # Download new PDFs (uses SyncState internally to skip already-downloaded)
-        pdf_paths = download_pdfs(output_dir=dotnews_dir)
-        stats["pdfs_downloaded"] = len(pdf_paths)
+        try:
+            pdf_paths = download_pdfs(output_dir=dotnews_dir)
+            stats["pdfs_downloaded"] = len(pdf_paths)
+        except Exception as e:
+            error_msg = f"[DOTNEWS] Error fetching directory listing: {e}"
+            stats["errors"].append(error_msg)
 
         # Load sync state to check what needs processing
         sync_state_path = config.DOTNEWS_SYNC_STATE_FILENAME
@@ -41,19 +45,19 @@ def sync_dotnews_newsletters() -> dict:
         unprocessed = sync_state.get_unprocessed_files()
 
         if not unprocessed:
-            log_info("No new PDFs to process")
+            log_info("[DOTNEWS] No new PDFs to process")
             return stats
 
-        log_info(f"Processing {len(unprocessed)} PDF(s)")
+        log_info(f"[DOTNEWS] Processing {len(unprocessed)} PDF(s)")
 
         for original_filename, renamed_filename in unprocessed:
             pdf_path = dotnews_dir / renamed_filename
 
             if not pdf_path.exists():
-                log_warning(f"File not found: {renamed_filename}")
+                log_warning(f"[DOTNEWS] File not found: {renamed_filename}")
                 continue
 
-            log_debug(f"  Processing: {renamed_filename}")
+            log_debug(f"[DOTNEWS]   Processing: {renamed_filename}")
             file_metadata = {"name": renamed_filename, "id": f"dotnews_{renamed_filename}", "modifiedTime": datetime.fromtimestamp(pdf_path.stat().st_mtime).isoformat() + "Z"}
 
             result = process_newsletter_pdf(pdf_path, file_metadata)
@@ -63,7 +67,7 @@ def sync_dotnews_newsletters() -> dict:
                 events_inserted = insert_events_to_db(result["events"])
                 events_count = len(result["events"])
                 stats["events_extracted"] += events_count
-                log_debug(f"  ✔  Inserted {events_inserted} events")
+                log_debug(f"[DOTNEWS]   ✔  Inserted {events_inserted} events")
 
             stats["chunks_added"] += len(result.get("documents", []))
             stats["pdfs_processed"] += 1
@@ -74,7 +78,7 @@ def sync_dotnews_newsletters() -> dict:
 
     except Exception as e:
         error_msg = f"Error syncing dotnews: {e}"
-        log_error(error_msg)
+        log_error(f"[DOTNEWS] {error_msg}")
         stats["errors"].append(error_msg)
 
     return stats
@@ -85,15 +89,15 @@ def safe_email_sync(interactive: bool = False) -> dict:
     try:
         email_stats = sync_email_newsletters_to_sql(interactive=interactive)
         if email_stats.get("auth_required"):
-            log_error("GMAIL AUTHENTICATION REQUIRED")
-            log_info(f"Visit: {email_stats.get('auth_url')}")
+            log_error("[GMAIL] Authentication required.")
+            log_info(f"[GMAIL] Visit: {email_stats.get('auth_url')}")
         return email_stats
     except AuthenticationRequiredError as e:
-        log_error("Gmail authentication required!")
-        log_info(f"Visit: {e.auth_url}")
+        log_error("[GMAIL] Authentication required.")
+        log_info(f"[GMAIL] Visit: {e.auth_url}")
         return {"emails_processed": 0, "events_extracted": 0, "events_inserted": 0, "errors": [f"Authentication required: {e.auth_url}"], "auth_required": True, "auth_url": e.auth_url}
     except Exception as e:
-        log_error(f"Email sync failed: {e}")
+        log_error(f"[GMAIL] Sync failed: {e}")
         return {"emails_processed": 0, "events_extracted": 0, "events_inserted": 0, "errors": [str(e)]}
 
 
@@ -103,7 +107,7 @@ def safe_boston_sync() -> dict:
         syncer = BostonDataSyncer()
         return syncer.sync_all()
     except Exception as e:
-        log_error(f"Boston data sync failed: {e}")
+        log_error(f"[BOS311] Boston 311 sync failed: {e}")
         return {"datasets_synced": 0, "total_records": 0, "datasets": [{"dataset": "unknown", "errors": [str(e)]}]}
 
 
@@ -112,7 +116,7 @@ def safe_drive_sync() -> dict:
     try:
         return sync_google_drive_to_vectordb()
     except Exception as e:
-        log_error(f"Google Drive sync failed: {e}")
+        log_error(f"[GDRIVE] Sync failed: {e}")
         return {"files_processed": 0, "chunks_added": 0, "errors": [str(e)]}
 
 
@@ -139,14 +143,6 @@ def log_run_summary(drive_stats, email_stats, boston_stats=None, dotnews_stats=N
         log_error(f"Could not write to log file: {e}")
 
 
-def print_banner(title: str):
-    width = 80
-    log("\n" + "╔" + "=" * (width - 2) + "╗")
-    padding = (width - len(title) - 2) // 2
-    log("║" + " " * padding + title + " " * (width - padding - len(title) - 2) + "║")
-    log("╚" + "=" * (width - 2) + "╝\n")
-
-
 def print_final_summary(drive_stats, email_stats, boston_stats=None, dotnews_stats=None):
     """Print final summary - always shown."""
     gdrive_errors = len(drive_stats.get("errors", []))
@@ -155,29 +151,22 @@ def print_final_summary(drive_stats, email_stats, boston_stats=None, dotnews_sta
     dotnews_errors = len(dotnews_stats.get("errors", [])) if dotnews_stats else 0
     total_errors = gdrive_errors + gmail_errors + bos311_errors + dotnews_errors
 
-    # Always show final summary (force=True equivalent via direct print)
-    log_msg("\n" + "╔" + "=" * 78 + "╗")
-    log_msg("║" + " " * 30 + " SYNC SUMMARY" + " " * 35 + "║")
-    log_msg("╠" + "=" * 78 + "╣")
-
     def stat_line(label, value):
-        return f"  »  {label:<40} {str(value):>6}"
+        return f"  »  {label:<25} {str(value):>7}"
 
-    log_msg(stat_line("Dotnews PDFs Processed:", dotnews_stats.get("pdfs_processed", 0) if dotnews_stats else 0))
-    log_msg(stat_line("Dotnews Events Extracted:", dotnews_stats.get("events_extracted", 0) if dotnews_stats else 0))
-    log_msg(stat_line("Google Drive Files Processed:", drive_stats.get("files_processed", 0)))
-    log_msg(stat_line("Vector DB Chunks Added:", drive_stats.get("chunks_added", 0)))
-    log_msg(stat_line("Emails Processed:", email_stats.get("emails_processed", 0)))
-    log_msg(stat_line("Email Events (SQL):", email_stats.get("events_inserted", 0)))
+    log_msg(stat_line("Dotnews PDFs:", dotnews_stats.get("pdfs_processed", 0) if dotnews_stats else 0))
+    log_msg(stat_line("Dotnews Events:", dotnews_stats.get("events_extracted", 0) if dotnews_stats else 0))
+    log_msg(stat_line("Google Drive Files:", drive_stats.get("files_processed", 0)))
+    log_msg(stat_line("VectorDB Chunks:", drive_stats.get("chunks_added", 0)))
+    log_msg(stat_line("Emails:", email_stats.get("emails_processed", 0)))
+    log_msg(stat_line("Email Events:", email_stats.get("events_inserted", 0)))
     if boston_stats:
-        log_msg(stat_line("Boston Datasets Synced:", boston_stats.get("datasets_synced", 0)))
-        log_msg(stat_line("Boston Records Synced:", boston_stats.get("total_records", 0)))
-    log_msg(stat_line("Total Errors:", total_errors))
-    log_msg("╚" + "=" * 78 + "╝\n")
+        log_msg(stat_line("Boston 311 Datasets:", boston_stats.get("datasets_synced", 0)))
+        log_msg(stat_line("Total Records:", boston_stats.get("total_records", 0)))
+    if total_errors:
+        log_msg(stat_line("Errors:", total_errors))
 
     if total_errors:
-        log_error(f"Daily ingestion completed with {total_errors} error(s).\n")
-        log_error("Error details:")
         for error in drive_stats.get("errors", []):
             log_error(f"[Google Drive] {error}")
         for error in email_stats.get("errors", []):
@@ -199,25 +188,25 @@ def run_sequential():
     log("▶ STARTING: Dotnews Newsletter Download & Processing")
     log("=" * 60)
     dotnews_stats = sync_dotnews_newsletters()
-    log_success(f"COMPLETED: Dotnews ({dotnews_stats.get('pdfs_processed', 0)} PDFs)")
+    log_success(f"[DOTNEWS] Completed ({dotnews_stats.get('pdfs_processed', 0)} PDFs)")
 
     log("\n" + "=" * 60)
     log("▶ STARTING: Google Drive → Vector DB")
     log("=" * 60)
     drive_stats = safe_drive_sync()
-    log_success(f"COMPLETED: Google Drive sync({drive_stats.get('files_processed', 0)} files)")
+    log_success(f"[GDRIVE] Completed ({drive_stats.get('files_processed', 0)} files)")
 
     log("\n" + "=" * 60)
     log("▶ STARTING: Email Newsletter → Calendar SQL")
     log("=" * 60)
     email_stats = safe_email_sync(interactive=False)
-    log_success(f"COMPLETED: Gmail sync ({email_stats.get('emails_processed', 0)} emails)")
+    log_success(f"[GMAIL] Completed ({email_stats.get('emails_processed', 0)} emails)")
 
     log("\n" + "=" * 60)
     log("▶ STARTING: Boston Open Data → MySQL")
     log("=" * 60)
     boston_stats = safe_boston_sync()
-    log_success(f"COMPLETED: Boston 311 Data sync ({boston_stats.get('total_records', 0)} records)")
+    log_success(f"[BOS311] Completed ({boston_stats.get('total_records', 0)} records)")
 
     return drive_stats, email_stats, boston_stats, dotnews_stats
 
@@ -254,7 +243,6 @@ def run_parallel():
 
 
 def main(parallel: bool = False):
-    print_banner(f"DAILY DATA INGESTION - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
     if get_verbosity() >= Verbosity.VERBOSE:
         config.print_config_summary()

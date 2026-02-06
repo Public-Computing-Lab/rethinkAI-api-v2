@@ -11,7 +11,7 @@
 - **API layer**: Flask app (`api/api.py`) exposes `/chat`, `/log`, `/events`, `/health`. Uses session cookie + per-session in-memory cache. CORS enabled for all origins; credentials allowed.
 - **Orchestration**: `chat_route.py` routes a user message to SQL, RAG, or hybrid using LLM-based planner. Maintains retrieval cache (SQL rows, RAG chunks, metadata, answer) and can answer from history/cache.
 - **Structured data path (SQL)**: `_run_sql` generates/executed SQL (MySQL via `mysql-connector-python`) against `rethink_ai_boston` DB, returns rows/columns plus generated answer.
-- **Unstructured path (RAG)**: `retrieval` module (in `main_chat/rag_pipeline`) queries vector DB (`vectordb_new`) and feeds chunks/metadata to Gemini to compose answer.
+- **Unstructured path (RAG)**: `retrieval` module (in `main_chat/rag_pipeline`) queries vector DB (`vectordb`) and feeds chunks/metadata to Gemini to compose answer.
 - **Hybrid path**: Executes both SQL and RAG; merges answers and sources.
 - **Logging**: `/log` and `/chat` call `log_interaction` to store query/response/mode in MySQL `interaction_log`; `/events` reads `weekly_events`.
 - **Event data**: `/events` returns upcoming events (start_date within configurable days ahead) limited by query params.
