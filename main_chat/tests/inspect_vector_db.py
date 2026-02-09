@@ -10,7 +10,6 @@ from collections import defaultdict
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_PROJECT_ROOT))
 
-import config
 from main_chat.rag_pipeline.rag_retrieval import load_vectordb
 
 
@@ -56,6 +55,17 @@ def inspect_vectordb():
         for dtype, count in sorted(doc_types.items()):
             print(f"  - {dtype}: {count}")
 
+        print("\n" + "=" * 80)
+        print("CLIENT_UPLOAD METADATA CHECK")
+        print("=" * 80)
+
+        for meta in metadatas:
+            if meta.get("doc_type") == "client_upload" and meta.get("chunk_id") == 0:
+                print(f"\nCLIENT_UPLOAD document:")
+                print(f"  Source: {meta.get('source')}")
+                print(f"  Full metadata: {meta}")
+                print(f"  Has folder_category? {meta.get('folder_category')}")
+
         # Show ALL files/sources grouped by document type
         print("\n" + "=" * 80)
         print("📁 ALL FILES IN VECTOR DATABASE (by type)")
@@ -88,11 +98,11 @@ def inspect_vectordb():
         print("Testing Policy Retrieval")
         print("=" * 80)
 
-        test_query = "anti-displacement"
-        print(f"\nTest query: '{test_query}'")
-
         # Try retrieving policies
         from main_chat.rag_pipeline.rag_retrieval import retrieve_policies
+
+        test_query = "anti-displacement"
+        print(f"\nTest query: '{test_query}'")
 
         result = retrieve_policies(test_query, k=5)
         chunks = result.get("chunks", [])
@@ -105,10 +115,11 @@ def inspect_vectordb():
             for i, (chunk, meta) in enumerate(zip(chunks[:2], metadata[:2]), 1):
                 print(f"\n  Result {i}:")
                 print(f"  Source: {meta.get('source', 'unknown')}")
-                print(f"  Type: {meta.get('doc_type', 'unknown')}")
+                print(f"  Doc Type: {meta.get('doc_type', 'unknown')}")
+                print(f"  Folder Category: {meta.get('folder_category', 'none')}")
                 print(f"  Preview: {chunk[:200]}...")
         else:
-            print("✗ No chunks retrieved! This is the problem.")
+            print("✗ No chunks retrieved!")
             # Try a more specific source filter
             print("\nTrying with specific source filter...")
             result2 = retrieve_policies(test_query, k=5, source="Boston Anti-Displacement Plan Analysis.txt")
