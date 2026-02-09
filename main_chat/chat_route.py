@@ -277,7 +277,7 @@ def _route_question(question: str) -> Dict[str, Any]:
         "3. If mode is 'rag' or 'hybrid':\n"
         "   - transcript_tags: array of 0-2 strings OR null (valid tags: safety, violence, youth, media, community, displacement, government, structural racism)\n"
         "   - policy_sources: array of strings OR null (valid: 'Boston Anti-Displacement Plan Analysis.txt', 'Boston Slow Streets Plan Analysis.txt', 'Imagine Boston 2030 Analysis.txt')\n"
-        "   - folder_categories: array of strings OR null (valid: newsletters, policy, transcripts)\n"
+        "   - folder_categories: array of strings OR null (valid: newsletters, policies, transcripts)\n"
         "   - k: integer between 3 and 10 (default 5, minimum 5 for event queries)\n"
         "4. For crime questions using 'hybrid' mode (Rule 1b or 1c): transcript_tags MUST include at least one of: 'safety' or 'violence'\n"
         "   For crime questions using 'sql' mode (Rule 1a): transcript_tags, policy_sources, and folder_categories MUST be null\n"
@@ -583,7 +583,6 @@ def _run_rag(question: str, plan: Dict[str, Any], conversation_history: Optional
     combined_chunks: List[str] = []
     combined_meta: List[Dict[str, Any]] = []
 
-    # Increase k for better source diversity
     retrieval_k = max(k * 3, 20)
 
     # ========================================================================
@@ -599,7 +598,7 @@ def _run_rag(question: str, plan: Dict[str, Any], conversation_history: Optional
         print(f"  ⚠ Transcript retrieval error: {e}")
 
     # ========================================================================
-    # POLICIES - retrieve from CLIENT_UPLOAD with folder_category filter
+    # POLICIES - retrieve from client_upload with folder_category filter
     # ========================================================================
     try:
         if sources:
@@ -618,11 +617,17 @@ def _run_rag(question: str, plan: Dict[str, Any], conversation_history: Optional
             folders_list = folders if isinstance(folders, list) else [folders]
 
             for folder in folders_list:
-                p_res = rag_retrieval.retrieve(question, k=retrieval_k, doc_type="client_upload", folder_category=folder)
-                p_chunks = p_res.get("chunks", [])
-                print(f"    Found {len(p_chunks)} chunks from folder: {folder}")
-                combined_chunks.extend(p_chunks)
-                combined_meta.extend(p_res.get("metadata", []))
+                # Map folder to correct doc_type
+                if folder == "transcripts":
+                    # Transcripts have doc_type="transcript" (already retrieved above)
+                    continue
+                else:
+                    # Other folders (policies, newsletters) are client_upload
+                    p_res = rag_retrieval.retrieve(question, k=retrieval_k, doc_type="client_upload", folder_category=folder)
+                    p_chunks = p_res.get("chunks", [])
+                    print(f"    Found {len(p_chunks)} chunks from folder: {folder}")
+                    combined_chunks.extend(p_chunks)
+                    combined_meta.extend(p_res.get("metadata", []))
         else:
             # No specific sources or folders - search all policies by default
             print("  📚 No specific policy sources, searching all policies")

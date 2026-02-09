@@ -38,7 +38,6 @@ def load_vectordb():
 def retrieve(query, k=5, doc_type=None, tags=None, source=None, folder_category=None, min_score=None, vectordb=None):
     """
     Universal retrieval with flexible metadata filtering.
-    Added 'folder_category' parameter to filter by Google Drive subfolder.
     """
     # Defensive clamp: Chroma requires k >= 1
     try:
@@ -52,45 +51,45 @@ def retrieve(query, k=5, doc_type=None, tags=None, source=None, folder_category=
         vectordb = load_vectordb()
 
     # Build filter dictionary
-    filter_conditions = []
+    filter_dict = None
+
+    # Build list of filter conditions
+    filters = []
 
     # Doc type filter
-    doc_filter = None
-    if isinstance(doc_type, (list, tuple)):
-        doc_types = [dt for dt in doc_type if dt]
-        if len(doc_types) == 1:
-            doc_filter = {"doc_type": doc_types[0]}
-        elif len(doc_types) > 1:
-            doc_filter = {"$or": [{"doc_type": dt} for dt in doc_types]}
-    elif doc_type:
-        doc_filter = {"doc_type": doc_type}
-
-    if doc_filter:
-        filter_conditions.append(doc_filter)
+    if doc_type:
+        if isinstance(doc_type, (list, tuple)):
+            doc_types = [dt for dt in doc_type if dt]
+            if len(doc_types) == 1:
+                filters.append({"doc_type": doc_types[0]})
+            elif len(doc_types) > 1:
+                filters.append({"$or": [{"doc_type": dt} for dt in doc_types]})
+        else:
+            filters.append({"doc_type": doc_type})
 
     # Source filter
     if source:
-        filter_conditions.append({"source": source})
+        filters.append({"source": source})
 
-    # Folder category filter (NEW)
+    # Folder category filter
     if folder_category:
         if isinstance(folder_category, (list, tuple)):
             if len(folder_category) == 1:
-                filter_conditions.append({"folder_category": folder_category[0]})
+                filters.append({"folder_category": folder_category[0]})
             elif len(folder_category) > 1:
-                filter_conditions.append({"$or": [{"folder_category": f} for f in folder_category]})
+                filters.append({"$or": [{"folder_category": f} for f in folder_category]})
         else:
-            filter_conditions.append({"folder_category": folder_category})
+            filters.append({"folder_category": folder_category})
 
-    # Combine all conditions
-    filter_dict = None
-    if len(filter_conditions) == 1:
-        filter_dict = filter_conditions[0]
-    elif len(filter_conditions) > 1:
-        filter_dict = {"$and": filter_conditions}
+    # Combine filters
+    if len(filters) == 1:
+        filter_dict = filters[0]
+    elif len(filters) > 1:
+        filter_dict = {"$and": filters}
 
+    # Retrieve with or without min_score
     if min_score is not None:
-        results_with_scores = vectordb.similarity_search_with_score(query, k=k * 3 if tags else k, filter=filter_dict if filter_dict else None)
+        results_with_scores = vectordb.similarity_search_with_score(query, k=k * 3 if tags else k, filter=filter_dict)
 
         if tags:
             filtered_results = []
@@ -106,9 +105,14 @@ def retrieve(query, k=5, doc_type=None, tags=None, source=None, folder_category=
 
         filtered_results = [(doc, score) for doc, score in results_with_scores if score <= min_score]
 
-        return {"chunks": [doc.page_content for doc, _ in filtered_results[:k]], "metadata": [doc.metadata for doc, _ in filtered_results[:k]], "scores": [score for _, score in filtered_results[:k]], "query": query}
+        return {
+            "chunks": [doc.page_content for doc, _ in filtered_results[:k]],
+            "metadata": [doc.metadata for doc, _ in filtered_results[:k]],
+            "scores": [score for _, score in filtered_results[:k]],
+            "query": query,
+        }
     else:
-        results = vectordb.similarity_search(query, k=k * 3 if tags else k, filter=filter_dict if filter_dict else None)
+        results = vectordb.similarity_search(query, k=k * 3 if tags else k, filter=filter_dict)
 
         if tags:
             filtered_results = []
@@ -122,12 +126,17 @@ def retrieve(query, k=5, doc_type=None, tags=None, source=None, folder_category=
             if filtered_results:
                 results = filtered_results
 
-        return {"chunks": [doc.page_content for doc in results[:k]], "metadata": [doc.metadata for doc in results[:k]], "scores": None, "query": query}
+        return {
+            "chunks": [doc.page_content for doc in results[:k]],
+            "metadata": [doc.metadata for doc in results[:k]],
+            "scores": None,
+            "query": query,
+        }
 
 
 def retrieve_transcripts(query, tags=None, k=5):
     """Convenience function for transcript-only search."""
-    return retrieve(query, k=k, doc_type="transcripts", tags=tags)
+    return retrieve(query, k=k, doc_type="transcript", tags=tags)
 
 
 def retrieve_policies(query, k=5, source=None):
