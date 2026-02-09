@@ -35,10 +35,10 @@ def load_vectordb():
     return vectordb
 
 
-def retrieve(query, k=5, doc_type=None, tags=None, source=None, min_score=None, vectordb=None):
+def retrieve(query, k=5, doc_type=None, tags=None, source=None, folder_category=None, min_score=None, vectordb=None):
     """
     Universal retrieval with flexible metadata filtering.
-    [... rest of function unchanged ...]
+    Added 'folder_category' parameter to filter by Google Drive subfolder.
     """
     # Defensive clamp: Chroma requires k >= 1
     try:
@@ -52,8 +52,9 @@ def retrieve(query, k=5, doc_type=None, tags=None, source=None, min_score=None, 
         vectordb = load_vectordb()
 
     # Build filter dictionary
-    filter_dict = None
+    filter_conditions = []
 
+    # Doc type filter
     doc_filter = None
     if isinstance(doc_type, (list, tuple)):
         doc_types = [dt for dt in doc_type if dt]
@@ -64,17 +65,29 @@ def retrieve(query, k=5, doc_type=None, tags=None, source=None, min_score=None, 
     elif doc_type:
         doc_filter = {"doc_type": doc_type}
 
-    if doc_filter and source:
-        filter_dict = {
-            "$and": [
-                doc_filter,
-                {"source": source},
-            ]
-        }
-    elif doc_filter:
-        filter_dict = doc_filter
-    elif source:
-        filter_dict = {"source": source}
+    if doc_filter:
+        filter_conditions.append(doc_filter)
+
+    # Source filter
+    if source:
+        filter_conditions.append({"source": source})
+
+    # Folder category filter (NEW)
+    if folder_category:
+        if isinstance(folder_category, (list, tuple)):
+            if len(folder_category) == 1:
+                filter_conditions.append({"folder_category": folder_category[0]})
+            elif len(folder_category) > 1:
+                filter_conditions.append({"$or": [{"folder_category": f} for f in folder_category]})
+        else:
+            filter_conditions.append({"folder_category": folder_category})
+
+    # Combine all conditions
+    filter_dict = None
+    if len(filter_conditions) == 1:
+        filter_dict = filter_conditions[0]
+    elif len(filter_conditions) > 1:
+        filter_dict = {"$and": filter_conditions}
 
     if min_score is not None:
         results_with_scores = vectordb.similarity_search_with_score(query, k=k * 3 if tags else k, filter=filter_dict if filter_dict else None)
@@ -114,12 +127,15 @@ def retrieve(query, k=5, doc_type=None, tags=None, source=None, min_score=None, 
 
 def retrieve_transcripts(query, tags=None, k=5):
     """Convenience function for transcript-only search."""
-    return retrieve(query, k=k, doc_type="transcript", tags=tags)
+    return retrieve(query, k=k, doc_type="transcripts", tags=tags)
 
 
 def retrieve_policies(query, k=5, source=None):
-    """Convenience function for policy-only search."""
-    return retrieve(query, k=k, doc_type="policy", source=source)
+    """
+    Convenience function for policy-only search.
+    Searches CLIENT_UPLOAD documents in the 'policies' folder category.
+    """
+    return retrieve(query, k=k, doc_type="client_upload", folder_category="policies", source=source)  # Changed from "policy" to "policies"
 
 
 def format_results(result_dict):

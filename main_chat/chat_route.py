@@ -167,13 +167,7 @@ def _check_if_needs_new_data(
         "Return ONLY valid JSON with keys: needs_new_data (boolean) and reason (brief string explaining your decision)."
     )
 
-    user_prompt = (
-        "Conversation History:\n" + (history_context if history_context else "(No previous conversation)") + "\n\n"
-        "Cached Data:\n" + cache_summary + "\n\n"
-        "Current Question: " + question + "\n\n"
-        "Analyze if this question can be answered from the conversation history and/or cached data above, or if it needs new data retrieval.\n"
-        "Return JSON only."
-    )
+    user_prompt = "Conversation History:\n" + (history_context if history_context else "(No previous conversation)") + "\n\n" "Cached Data:\n" + cache_summary + "\n\n" "Current Question: " + question + "\n\n" "Analyze if this question can be answered from the conversation history and/or cached data above, or if it needs new data retrieval.\n" "Return JSON only."
 
     default_result = {"needs_new_data": True, "reason": "Error analyzing question, defaulting to new data"}
 
@@ -266,11 +260,11 @@ def _route_question(question: str) -> Dict[str, Any]:
         "   - If question mentions a SPECIFIC policy by name (e.g., 'Anti-Displacement Plan', 'Slow Streets', 'Imagine Boston 2030'):\n"
         "     * Set policy_sources to that specific document (e.g., ['Boston Anti-Displacement Plan Analysis.txt'])\n"
         "     * ALWAYS also add relevant transcript_tags for community perspective\n"
-        "   - If question is GENERAL about policy/planning but doesn't name a specific document:\n"
-        "     * Examples: 'What are current policy issues?', 'What policies affect housing?', 'What is being planned for the neighborhood?'\n"
+        "   - If question is GENERAL about policy/policies/planning/housing (doesn't name a specific document):\n"
+        "     * Examples: 'What are current policy issues?', 'What policies affect housing?', 'What is being planned for the neighborhood?', 'What does the city say about displacement?'\n"
         "     * Set policy_sources to null (will search ALL policy documents)\n"
-        "     * Add relevant transcript_tags\n"
-        "     * Set k to at least 10 to get diverse policy coverage\n\n"
+        "     * Set folder_categories to ['policies'] to search the policy folder\n"
+        "     * Set k to at least 15 to get diverse policy coverage\n\n"
         "RULE 6: COMBINED DATA + CONTEXT → 'hybrid' mode\n"
         "   - Questions that explicitly ask for BOTH numbers/data AND context/explanation\n"
         "   - Examples: 'How many homicides and what concerns come up?', 'Show trends and how policies address them'\n"
@@ -304,7 +298,7 @@ def _route_question(question: str) -> Dict[str, Any]:
         "Question:\n" + question + "\n\n"
         "Policy sources include: 'Boston Anti-Displacement Plan Analysis.txt', 'Boston Slow Streets Plan Analysis.txt', 'Imagine Boston 2030 Analysis.txt'.\n"
         "Transcript tags include: safety, violence, youth, media, community, displacement, government, structural racism.\n"
-        "Folder categories (for client uploads): newsletters, policy, transcripts.\n"
+        "Folder categories (for client uploads): newsletters, policies, transcripts.\n"
         "Output JSON only."
     )
 
@@ -584,39 +578,54 @@ def _run_rag(question: str, plan: Dict[str, Any], conversation_history: Optional
     k = int(plan.get("k", 5))
     tags = plan.get("transcript_tags")
     sources = plan.get("policy_sources")
+    folders = plan.get("folder_categories")
 
     combined_chunks: List[str] = []
     combined_meta: List[Dict[str, Any]] = []
 
     # Increase k for better source diversity
-    # Retrieve more chunks to get more diverse sources in the citations
-    # Use at least 20 chunks to ensure we get multiple unique sources
-    retrieval_k = max(k * 3, 20)  # At least 20 chunks for source diversity
+    retrieval_k = max(k * 3, 20)
 
-    # transcripts
+    # ========================================================================
+    # TRANSCRIPTS - retrieve with tags
+    # ========================================================================
     try:
         t_res = rag_retrieval.retrieve_transcripts(question, tags=tags, k=retrieval_k)
         t_chunks = t_res.get("chunks", [])
-        print(f"  📝 Transcripts: {len(t_chunks)} chunks found")
+        print(f"  📄 Transcripts: {len(t_chunks)} chunks found")
         combined_chunks.extend(t_chunks)
         combined_meta.extend(t_res.get("metadata", []))
     except Exception as e:
         print(f"  ⚠ Transcript retrieval error: {e}")
 
-    # policies
+    # ========================================================================
+    # POLICIES - retrieve from CLIENT_UPLOAD with folder_category filter
+    # ========================================================================
     try:
         if sources:
-            print(f"  🔍 Policy sources requested: {sources}")
-            # When specific policy sources are requested
+            # Specific policy documents requested by name
+            print(f"  📚 Policy sources requested: {sources}")
             for src in sources:
-                print(f"  🔍 Querying policy source: {src}")
+                print(f"  📚 Querying policy source: {src}")
                 p_res = rag_retrieval.retrieve_policies(question, k=retrieval_k, source=src)
                 p_chunks = p_res.get("chunks", [])
                 print(f"      Found {len(p_chunks)} chunks from {src}")
                 combined_chunks.extend(p_chunks)
                 combined_meta.extend(p_res.get("metadata", []))
+        elif folders:
+            # Folder categories specified (e.g., ["policies", "newsletters"])
+            print(f"  📁 Folder categories requested: {folders}")
+            folders_list = folders if isinstance(folders, list) else [folders]
+
+            for folder in folders_list:
+                p_res = rag_retrieval.retrieve(question, k=retrieval_k, doc_type="client_upload", folder_category=folder)
+                p_chunks = p_res.get("chunks", [])
+                print(f"    Found {len(p_chunks)} chunks from folder: {folder}")
+                combined_chunks.extend(p_chunks)
+                combined_meta.extend(p_res.get("metadata", []))
         else:
-            print("  🔍 No specific policy sources, searching all policies")
+            # No specific sources or folders - search all policies by default
+            print("  📚 No specific policy sources, searching all policies")
             p_res = rag_retrieval.retrieve_policies(question, k=retrieval_k)
             p_chunks = p_res.get("chunks", [])
             print(f"    Policies: {len(p_chunks)} chunks found")
